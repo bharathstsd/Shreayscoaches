@@ -93,6 +93,14 @@ def require_change(user, obj):
         raise Forbidden(f"{club.name} is disabled. Enable the club before changing data.")
 
 
+def upline(data, required=True):
+    """Sponsor / upline details: name, mobile and Herbalife ID (all required)."""
+    name = text(data, "upline_name", required, label="Upline / sponsor name", max_len=120)
+    mob = clean_mobile(data.get("upline_mobile"), required=required)
+    hid = text(data, "upline_herbalife_id", required, label="Upline / sponsor Herbalife ID", max_len=40)
+    return {"upline_name": name, "upline_mobile": mob, "upline_herbalife_id": hid}
+
+
 def coach_for(club, coach_id, required=True):
     if not coach_id:
         if required:
@@ -146,11 +154,13 @@ def user_json(u):
     return {"id": u.id, "username": u.username, "name": u.get_full_name() or u.username, "first_name": u.first_name,
             "last_name": u.last_name, "role": u.role, "mobile": u.mobile, "herbalife_id": u.herbalife_id,
             "club": u.club_id, "club_name": u.club.name if u.club else None, "is_active": u.is_active,
+            "upline_name": u.upline_name, "upline_mobile": u.upline_mobile, "upline_herbalife_id": u.upline_herbalife_id,
             "must_change_password": u.must_change_password}
 
 
 def coach_json(c):
-    return {"id": c.id, "name": c.name, "mobile": c.mobile, "herbalife_id": c.herbalife_id, "is_active": c.is_active, "club": c.club_id}
+    return {"id": c.id, "name": c.name, "mobile": c.mobile, "herbalife_id": c.herbalife_id, "is_active": c.is_active, "club": c.club_id,
+            "upline_name": c.upline_name, "upline_mobile": c.upline_mobile, "upline_herbalife_id": c.upline_herbalife_id}
 
 
 def eligibility(c):

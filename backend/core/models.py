@@ -42,6 +42,9 @@ class User(AbstractUser):
     club = models.ForeignKey(Club, null=True, blank=True, on_delete=models.PROTECT, related_name="staff")
     mobile = models.CharField(max_length=15, unique=True, null=True, blank=True)
     herbalife_id = models.CharField(max_length=40, blank=True)
+    upline_name = models.CharField(max_length=120, blank=True)        # sponsor / upline
+    upline_mobile = models.CharField(max_length=15, blank=True)
+    upline_herbalife_id = models.CharField(max_length=40, blank=True)
     must_change_password = models.BooleanField(default=False)
     temp_password_expires = models.DateTimeField(null=True, blank=True)
 
@@ -63,6 +66,9 @@ class Coach(Tracked):
     name = models.CharField(max_length=120)
     mobile = models.CharField(max_length=15, blank=True)
     herbalife_id = models.CharField(max_length=40, blank=True)
+    upline_name = models.CharField(max_length=120, blank=True)        # sponsor / upline
+    upline_mobile = models.CharField(max_length=15, blank=True)
+    upline_herbalife_id = models.CharField(max_length=40, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:

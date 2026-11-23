@@ -109,7 +109,7 @@ export function ClubDetail({ ctx, arg }) {
               const s = roles[role];
               return s ? (
                 <div key={role} className="row" style={{ cursor: "default" }}>
-                  <span className="grow"><b>{s.name}</b><span className="muted">{role === "OWNER" ? "Club Owner" : "Supervisor"} · {s.username} · {s.mobile}</span></span>
+                  <span className="grow"><b>{s.name}</b><span className="muted">{role === "OWNER" ? "Club Owner" : "Supervisor"} · {s.username} · {s.mobile}{s.herbalife_id ? " · " + s.herbalife_id : ""}{s.upline_name ? " · upline " + s.upline_name : ""}</span></span>
                   <button className="chip" onClick={() => removeStaff(s)} disabled={busy}>Remove</button>
                 </div>
               ) : (
@@ -142,7 +142,8 @@ export function ClubDetail({ ctx, arg }) {
 }
 
 function StaffForm({ club, role, onClose, onSaved }) {
-  const [f, setF] = useState({ first_name: "", last_name: "", username: "", mobile: "", herbalife_id: "" });
+  const [f, setF] = useState({ first_name: "", last_name: "", username: "", mobile: "", herbalife_id: "", upline_name: "", upline_mobile: "", upline_herbalife_id: "" });
+  const owner = role === "OWNER";
   const [run, busy] = useAction();
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   async function save(e) {
@@ -154,8 +155,11 @@ function StaffForm({ club, role, onClose, onSaved }) {
     <Sheet title={`New ${role === "OWNER" ? "Club Owner" : "Supervisor"} · ${club.name}`} onClose={onClose}>
       <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="btns"><Field label="First name" id="sf" value={f.first_name} onChange={set("first_name")} required /><Field label="Last name" id="sl" value={f.last_name} onChange={set("last_name")} /></div>
-        <Field label="Username" id="su" value={f.username} onChange={set("username")} autoCapitalize="none" required />
-        <div className="btns"><Field label="Mobile (10 digits)" id="sm" value={f.mobile} onChange={set("mobile")} inputMode="numeric" required /><Field label="Herbalife / Staff ID" id="sh" value={f.herbalife_id} onChange={set("herbalife_id")} required /></div>
+        <div className="btns"><Field label="Mobile (10 digits)" id="sm" value={f.mobile} onChange={set("mobile")} inputMode="numeric" required /><Field label="Herbalife ID" id="sh" value={f.herbalife_id} onChange={set("herbalife_id")} required /></div>
+        <Field label="Username (optional, the Herbalife ID is used if empty)" id="su" value={f.username} onChange={set("username")} autoCapitalize="none" />
+        <p className="lbl" style={{ marginTop: 4 }}>Upline / sponsor{owner ? "" : " (optional)"}</p>
+        <Field label="Upline name" id="un" value={f.upline_name} onChange={set("upline_name")} required={owner} />
+        <div className="btns"><Field label="Upline mobile" id="um" value={f.upline_mobile} onChange={set("upline_mobile")} inputMode="numeric" required={owner} /><Field label="Upline Herbalife ID" id="uh" value={f.upline_herbalife_id} onChange={set("upline_herbalife_id")} required={owner} /></div>
         <div className="btns"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy}>Create login</button></div>
       </form>
     </Sheet>

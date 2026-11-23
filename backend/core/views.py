@@ -21,7 +21,7 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from .auth import AdminOnly, NotSupervisor
 from .errors import Forbidden, Rule
-from .helpers import (audit, can_change, clean_mobile, club_json, coach_for, coach_json, customer_for, customer_json, d,
+from .helpers import (audit, can_change, upline, clean_mobile, club_json, coach_for, coach_json, customer_for, customer_json, d,
                       get_scoped, issue_json, read_club, require_change, scoped, snapshot, text, trial_json, user_json,
                       visit_json, write_club)
 from .models import (Allocation, AuditLog, Club, Coach, CouponIssue, CouponUnit, Customer, CvcMembership,
@@ -252,18 +252,19 @@ def users(request):
         raise Rule("Choose a club.")
     if not club.is_active:
         raise Forbidden(f"{club.name} is disabled. Enable the club before adding staff.")
-    username = text(data, "username", max_len=150).lower()
     mobile = clean_mobile(data.get("mobile"))
     hid = text(data, "herbalife_id", label="Herbalife / Staff ID", max_len=40)
+    username = (text(data, "username", False, max_len=150) or hid).lower().replace(" ", "")
     if User.objects.filter(username__iexact=username).exists():
         raise Rule("That username is already taken.")
     if User.objects.filter(mobile=mobile).exists():
         raise Rule("That mobile number is already used by another account.")
     if User.objects.filter(club=club, role=role, is_active=True).exists():
         raise Rule(f"{club.name} already has an active {'Club Owner' if role == 'OWNER' else 'Supervisor'}. Edit or deactivate that account instead.")
+    up = upline(data, required=(role == "OWNER"))
     pw = temp_password()
     u = User(username=username, first_name=text(data, "first_name", label="Name", max_len=150), last_name=text(data, "last_name", False, max_len=150),
-             role=role, club=club, mobile=mobile, herbalife_id=hid, must_change_password=True,
+             role=role, club=club, mobile=mobile, herbalife_id=hid, must_change_password=True, **up,
              temp_password_expires=timezone.now() + timedelta(hours=settings.TEMP_PASSWORD_TTL_HOURS))
     u.set_password(pw)
     u.save()
@@ -296,6 +297,9 @@ def user_detail(request, pk):
             setattr(u, f, text(data, f, f == "first_name", max_len=150))
     if "herbalife_id" in data:
         u.herbalife_id = text(data, "herbalife_id", label="Herbalife / Staff ID", max_len=40)
+    if "upline_name" in data:
+        for k, v in upline(data, required=(u.role == "OWNER")).items():
+            setattr(u, k, v)
     if "mobile" in data:
         m = clean_mobile(data.get("mobile"))
         if User.objects.filter(mobile=m).exclude(pk=u.pk).exists():
@@ -328,8 +332,8 @@ def coaches(request):
     club = write_club(request, request.data)
     c = Coach.objects.create(club=club, name=text(request.data, "name", label="Coach name", max_len=120),
                              mobile=clean_mobile(request.data.get("mobile")),
-                             herbalife_id=text(request.data, "herbalife_id", False, max_len=40),
-                             created_by=request.user)
+                             herbalife_id=text(request.data, "herbalife_id", label="Coach Herbalife ID", max_len=40),
+                             created_by=request.user, **upline(request.data))
     audit(request, "create", "coach", c, after=coach_json(c))
     return Response(coach_json(c), status=201)
 
@@ -346,7 +350,10 @@ def coach_detail(request, pk):
     if "mobile" in request.data:
         c.mobile = clean_mobile(request.data.get("mobile"))
     if "herbalife_id" in request.data:
-        c.herbalife_id = text(request.data, "herbalife_id", False, max_len=40)
+        c.herbalife_id = text(request.data, "herbalife_id", label="Coach Herbalife ID", max_len=40)
+    if "upline_name" in request.data:
+        for k, v in upline(request.data).items():
+            setattr(c, k, v)
     if "is_active" in request.data:
         c.is_active = bool(request.data.get("is_active"))
     c.updated_by = request.user

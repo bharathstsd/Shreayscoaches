@@ -77,12 +77,12 @@ If a build fails, the previous version stays live and the error shows in that lo
 
 ## Adding clubs and logins in bulk from Excel
 
-1. Fill in `deploy/club-import-template.xlsx` (sheet **Clubs**: club details plus its Owner and Supervisor; optional sheet **Coaches**).
+1. Fill in `deploy/club-import-template.xlsx`: sheet **Clubs** (club, Club Owner and the Owner's upline / sponsor) and optional sheet **Coaches** (coach and the coach's upline / sponsor). Name, mobile and Herbalife ID are required for every person and every upline. The Owner's username is their Herbalife ID.
 2. Upload it to the server, e.g. as `/root/clubs.xlsx`.
 3. Check it (changes nothing): `sudo bash deploy/manage.sh import_clubs /root/clubs.xlsx`
 4. Create everything: `sudo bash deploy/manage.sh import_clubs /root/clubs.xlsx --commit`
 
-Step 4 writes `/root/logins-<date>.csv` with each person's username, temporary password (valid 72 hours) and a ready WhatsApp message. Send the messages, then delete that file. Clubs that already exist are reused; existing usernames or mobiles are reported, and nothing is created until every row is correct.
+Step 4 writes `/root/logins-<date>.csv` with each Club Owner's username, temporary password (valid 72 hours) and a ready WhatsApp message. Send the messages, then delete that file. Clubs that already exist are reused; existing usernames or mobiles are reported, and nothing is created until every row is correct.
 
 ## Useful commands
 

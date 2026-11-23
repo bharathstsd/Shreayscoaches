@@ -187,7 +187,8 @@ export function Weekly({ ctx }) {
 }
 
 export function CoachForm({ ctx, coach, onClose, onSaved }) {
-  const [f, setF] = useState(coach || { name: "", mobile: "", herbalife_id: "" });
+  const [f, setF] = useState(coach ? { ...coach, upline_name: coach.upline_name || "", upline_mobile: coach.upline_mobile || "", upline_herbalife_id: coach.upline_herbalife_id || "" }
+    : { name: "", mobile: "", herbalife_id: "", upline_name: "", upline_mobile: "", upline_herbalife_id: "" });
   const [run, busy] = useAction();
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   async function save(e) {
@@ -199,7 +200,10 @@ export function CoachForm({ ctx, coach, onClose, onSaved }) {
     <Sheet title={coach ? "Edit coach" : "New coach"} onClose={onClose}>
       <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <Field label="Coach name" id="kn" value={f.name} onChange={set("name")} required />
-        <div className="btns"><Field label="Mobile (10 digits)" id="km" value={f.mobile} onChange={set("mobile")} inputMode="numeric" required /><Field label="Herbalife ID" id="kh" value={f.herbalife_id} onChange={set("herbalife_id")} /></div>
+        <div className="btns"><Field label="Mobile (10 digits)" id="km" value={f.mobile} onChange={set("mobile")} inputMode="numeric" required /><Field label="Herbalife ID" id="kh" value={f.herbalife_id} onChange={set("herbalife_id")} required /></div>
+        <p className="lbl" style={{ marginTop: 4 }}>Upline / sponsor</p>
+        <Field label="Upline name" id="kun" value={f.upline_name} onChange={set("upline_name")} required />
+        <div className="btns"><Field label="Upline mobile" id="kum" value={f.upline_mobile} onChange={set("upline_mobile")} inputMode="numeric" required /><Field label="Upline Herbalife ID" id="kuh" value={f.upline_herbalife_id} onChange={set("upline_herbalife_id")} required /></div>
         <div className="btns"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy}>Save</button></div>
       </form>
     </Sheet>
@@ -221,9 +225,9 @@ export function Coaches({ ctx }) {
     <>
       {!canEdit && <div className="banner info">View only. The Club Owner adds and edits coaches.</div>}
       {data.length === 0 ? <Empty>No coaches yet.</Empty> : (
-        <div className="tbl-wrap"><table style={{ minWidth: 460 }}><thead><tr><th>Coach</th><th>Mobile</th><th>Herbalife ID</th><th>Status</th>{canEdit && <th />}</tr></thead><tbody>
+        <div className="tbl-wrap"><table style={{ minWidth: 620 }}><thead><tr><th>Coach</th><th>Mobile</th><th>Herbalife ID</th><th>Upline</th><th>Status</th>{canEdit && <th />}</tr></thead><tbody>
           {data.map((c) => (
-            <tr key={c.id}><td><b>{c.name}</b></td><td>{c.mobile}</td><td>{c.herbalife_id || "—"}</td><td><span className={"tag" + (c.is_active ? "" : " grey")}>{c.is_active ? "Active" : "Inactive"}</span></td>
+            <tr key={c.id}><td><b>{c.name}</b></td><td>{c.mobile}</td><td>{c.herbalife_id || "—"}</td><td>{c.upline_name ? `${c.upline_name} · ${c.upline_herbalife_id}` : "—"}</td><td><span className={"tag" + (c.is_active ? "" : " grey")}>{c.is_active ? "Active" : "Inactive"}</span></td>
               {canEdit && <td style={{ whiteSpace: "nowrap" }}><button className="chip" onClick={() => setForm(c)}>Edit</button> <button className="chip" onClick={() => toggle(c)}>{c.is_active ? "Deactivate" : "Activate"}</button></td>}</tr>
           ))}
         </tbody></table></div>

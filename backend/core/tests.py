@@ -211,6 +211,22 @@ class AccountTests(Base):
         r = ad.post("/api/users", {"role": "SUPERVISOR", "club": self.b.id, "username": "sup2", "first_name": "S", "mobile": "9000000099"}, format="json")
         self.assertIn("Herbalife", r.data["error"])
 
+    def test_owner_and_coach_need_upline(self):
+        ad = self.as_(self.admin)
+        c = Club.objects.create(name="Club C")
+        base = {"role": "OWNER", "club": c.id, "first_name": "Sumiya", "mobile": "9440809404", "herbalife_id": "W3051646"}
+        r = ad.post("/api/users", base, format="json")
+        self.assertIn("Upline", r.data["error"])
+        r = ad.post("/api/users", {**base, "upline_name": "Santhosh", "upline_mobile": "9848143809", "upline_herbalife_id": "W2534342"}, format="json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["user"]["username"], "w3051646")      # username defaults to Herbalife ID
+        ow = self.as_(self.owner)
+        r = ow.post("/api/coaches", {"name": "Giri", "mobile": "9676011011", "herbalife_id": "W1578045"}, format="json")
+        self.assertIn("Upline", r.data["error"])
+        r = ow.post("/api/coaches", {"name": "Giri", "mobile": "9676011011", "herbalife_id": "W1578045", "upline_name": "Naidu",
+                                     "upline_mobile": "9000000000", "upline_herbalife_id": "W1"}, format="json")
+        self.assertEqual(r.status_code, 201)
+
     def test_password_reset_flow(self):
         c = APIClient()
         self.assertEqual(c.post("/api/auth/forgot", {"username": "nobody"}, format="json").status_code, 200)
