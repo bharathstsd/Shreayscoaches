@@ -227,6 +227,32 @@ class AccountTests(Base):
                                      "upline_mobile": "9000000000", "upline_herbalife_id": "W1"}, format="json")
         self.assertEqual(r.status_code, 201)
 
+    def test_excel_upload_check_then_create(self):
+        import io
+        from openpyxl import Workbook
+        wb = Workbook(); ws = wb.active; ws.title = "Clubs"
+        ws.append(["Club name", "City", "Address", "Pincode", "Owner name", "Owner mobile", "Owner Herbalife ID",
+                   "Upline / sponsor name", "Upline / sponsor mobile", "Upline / sponsor Herbalife ID"])
+        ws.append(["Sumiya Club", "Kadapa", "", "", "Patnool Shaik Sumiya", "9440809404", "W3051646", "Santhosh", "9848143809", "W2534342"])
+        wc = wb.create_sheet("Coaches")
+        wc.append(["Club name", "Coach name", "Coach mobile", "Coach Herbalife ID", "Upline / sponsor name", "Upline / sponsor mobile", "Upline / sponsor Herbalife ID"])
+        wc.append(["Club A", "Ravi", "9703416564", "W1C1327574", "Venkatramana", "9133289777", "W1C1235650"])
+        buf = io.BytesIO(); wb.save(buf)
+        ad = self.as_(self.admin)
+        def up(commit):
+            buf.seek(0)
+            return ad.post("/api/import", {"file": buf, "commit": commit}, format="multipart")
+        r = up("0")
+        self.assertTrue(r.data["ok"]); self.assertFalse(r.data["created"])
+        self.assertEqual((r.data["summary"]["new_clubs"], r.data["summary"]["coaches"]), (1, 1))
+        self.assertFalse(Club.objects.filter(name="Sumiya Club").exists())
+        r = up("1")
+        self.assertTrue(r.data["created"]); self.assertEqual(r.data["logins"][0]["username"], "w3051646")
+        self.assertEqual(Coach.objects.filter(club=self.a, name="Ravi").count(), 1)
+        r = up("0")                                    # same file again: owner already exists
+        self.assertFalse(r.data["ok"]); self.assertTrue(any("already" in e for e in r.data["errors"]))
+        self.assertEqual(self.as_(self.owner).post("/api/import", {}, format="multipart").status_code, 403)
+
     def test_password_reset_flow(self):
         c = APIClient()
         self.assertEqual(c.post("/api/auth/forgot", {"username": "nobody"}, format="json").status_code, 200)

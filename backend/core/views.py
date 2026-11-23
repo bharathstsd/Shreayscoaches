@@ -960,3 +960,30 @@ def audit_log(request):
     qs = AuditLog.objects.select_related("actor", "club")[:300]
     return Response([{"at": d(a.created_at), "who": a.actor.username if a.actor else "", "club": a.club.name if a.club else "",
                       "action": a.action, "entity": a.entity, "entity_id": a.entity_id} for a in qs])
+
+
+# =====================================================================  EXCEL IMPORT (Super Admin)
+@api_view(["POST"])
+@permission_classes([AdminOnly])
+def import_excel(request):
+    """Upload the club/coach sheet. commit=0 only checks; commit=1 creates everything."""
+    from . import importer
+    f = request.FILES.get("file")
+    if not f:
+        raise Rule("Choose the Excel file to upload.")
+    if f.size > 5 * 1024 * 1024:
+        raise Rule("The file is too big. Keep it under 5 MB.")
+    try:
+        plan, errors, summary = importer.check(importer.open_workbook(f))
+    except importer.ImportError_ as e:
+        raise Rule(str(e))
+    commit = str(request.data.get("commit", "0")) in ("1", "true", "yes")
+    if errors or not commit:
+        return Response({"ok": not errors, "errors": errors, "summary": summary, "created": False})
+    try:
+        hours = max(1, min(int(request.data.get("expires_hours") or 72), 168))
+    except ValueError:
+        hours = 72
+    res = importer.create(plan, hours, actor=request.user)
+    audit(request, "excel_import", "import", None, after={"clubs": summary["new_clubs"], "owners": len(res["logins"]), "coaches": res["coaches_created"]})
+    return Response({"ok": True, "errors": [], "summary": summary, "created": True, **res})

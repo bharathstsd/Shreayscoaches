@@ -16,11 +16,12 @@ export async function api(path, { method = "GET", body, club, raw } = {}) {
   let url = "/api/" + path;
   if (club) url += (url.includes("?") ? "&" : "?") + "club=" + club;
   const headers = { Accept: "application/json" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = "Bearer " + token;
   let res;
   try {
-    res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    res = await fetch(url, { method, headers, body: body === undefined ? undefined : isForm ? body : JSON.stringify(body) });
   } catch (e) {
     throw new Error("No internet connection. Check your connection and try again.");
   }

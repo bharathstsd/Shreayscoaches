@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, hasToken, setToken, setUnauthorizedHandler } from "./api";
 import { Icon, Loading, ToastProvider } from "./ui";
 import { ChangePassword, Login } from "./screens/Auth";
-import { AdminHome, Allocate, AuditLog, ClubDetail, Clubs, Coupons, Resets } from "./screens/Admin";
+import { AdminHome, Allocate, AuditLog, ClubDetail, Clubs, Coupons, ImportExcel, Resets } from "./screens/Admin";
 import { Customer, Customers } from "./screens/Customers";
 import { Issue } from "./screens/Issue";
 import { Visits } from "./screens/Visits";
@@ -10,7 +10,7 @@ import { Coaches, Cvc, Launch, More, OwnerHome, Tree, Trials, Weekly } from "./s
 
 const TITLES = {
   home: "Dashboard", clubs: "Nutrition clubs", club: "Club details", coupons: "Coupon inventory", allocate: "Allocate coupons",
-  resets: "Password resets", audit: "Change log", customers: "Customers", customer: "Customer", issue: "Issue coupon",
+  resets: "Password resets", audit: "Change log", import: "Import from Excel", customers: "Customers", customer: "Customer", issue: "Issue coupon",
   visits: "Visitors & redemption", more: "More", trials: "3-day trials", cvc: "CVC membership", weekly: "Weekly results",
   coaches: "Wellness coaches", tree: "Referral trees", password: "Change password",
 };
@@ -70,7 +70,7 @@ function Shell() {
       ? [["home", "Home", "home"], ["customers", "Customers", "users"], ["issue", "Issue", "coupon"], ["visits", "Visits", "door"], ["more", "More", "grid"]]
       : [["home", "Home", "home"], ["issue", "Issue", "coupon"], ["visits", "Visits", "door"], ["customers", "Customers", "users"], ["more", "More", "grid"]];
   const sideExtra = isAdmin
-    ? [["customers", "Customers", "users"], ["issue", "Issue coupon", "coupon"], ["visits", "Visitors", "door"], ["trials", "3-day trials", "trial"], ["cvc", "CVC", "star"], ["weekly", "Weekly results", "award"], ["coaches", "Coaches", "coach"], ["tree", "Referral trees", "tree"], ["audit", "Change log", "log"]]
+    ? [["import", "Import from Excel", "upload"], ["customers", "Customers", "users"], ["issue", "Issue coupon", "coupon"], ["visits", "Visitors", "door"], ["trials", "3-day trials", "trial"], ["cvc", "CVC", "star"], ["weekly", "Weekly results", "award"], ["coaches", "Coaches", "coach"], ["tree", "Referral trees", "tree"], ["audit", "Change log", "log"]]
     : [["trials", "3-day trials", "trial"], ["cvc", "CVC membership", "star"], ["weekly", "Weekly results", "award"], ["coaches", "Coaches", "coach"], ...(role === "OWNER" ? [["tree", "Referral trees", "tree"]] : [])];
   const roleLabel = isAdmin ? "SUPER ADMIN" + (clubName ? " · " + clubName.toUpperCase() : " · ALL CLUBS") : (role === "OWNER" ? "CLUB OWNER · " : "SUPERVISOR · ") + (user.club_name || "").toUpperCase();
   const rootOf = { club: "clubs", allocate: "coupons", customer: "customers" };
@@ -90,11 +90,11 @@ function Shell() {
   else {
     const S = {
       home: isAdmin ? AdminHome : role === "OWNER" ? OwnerHome : Launch,
-      clubs: Clubs, club: ClubDetail, coupons: Coupons, allocate: Allocate, resets: Resets, audit: AuditLog,
+      clubs: Clubs, club: ClubDetail, coupons: Coupons, allocate: Allocate, resets: Resets, audit: AuditLog, import: ImportExcel,
       customers: Customers, customer: Customer, issue: Issue, visits: Visits, more: More, trials: Trials, cvc: Cvc,
       weekly: Weekly, coaches: Coaches, tree: Tree, password: ChangePassword,
     }[name];
-    const adminOnly = ["clubs", "club", "coupons", "allocate", "resets", "audit"];
+    const adminOnly = ["clubs", "club", "coupons", "allocate", "resets", "audit", "import"];
     body = adminOnly.includes(name) && !isAdmin ? <p className="muted">This page is for the Super Admin.</p>
       : <S ctx={ctx} arg={route.arg} key={name + (route.arg || "") + club} user={user} onDone={() => back()} />;
   }

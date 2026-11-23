@@ -30,7 +30,7 @@ export function More({ ctx }) {
     ["trial", "trials", "3-day trials", "Attendance for each day"], ["star", "cvc", "CVC membership", "Convert trial finishers"],
     ["award", "weekly", "Weekly results & awards", "Checkups and Best Results"], ["coach", "coaches", "Wellness coaches", ctx.role === "SUPERVISOR" ? "View only" : "Add and edit coaches"],
     ...(ctx.role !== "SUPERVISOR" ? [["tree", "tree", "Referral trees", "Who referred whom"]] : []),
-    ...(ctx.isAdmin ? [["log", "audit", "Change log", "Every create, edit and delete"]] : []),
+    ...(ctx.isAdmin ? [["upload", "import", "Import from Excel", "Clubs, Club Owners and coaches"], ["log", "audit", "Change log", "Every create, edit and delete"]] : []),
     ["key", "password", "Change my password", "For your own account only"],
   ];
   return (

@@ -20,6 +20,7 @@ const P = {
   check: <path d="M20 6 9 17l-5-5" />,
   chev: <path d="m9 18 6-6-6-6" />,
   log: <><path d="M4 4h16v16H4z" /><path d="M8 9h8M8 13h8M8 17h5" /></>,
+  upload: <><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></>,
   leaf: <path d="M12 20c-4 0-8-3-9-7 4 0 7 2 9 7Zm0 0c4 0 8-3 9-7-4 0-7 2-9 7Zm0 0c-2-3-2-9 0-14 2 5 2 11 0 14Z" />,
 };
 

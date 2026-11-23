@@ -21,6 +21,7 @@ export function Clubs({ ctx }) {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <input className="inp" id="clubSearch" style={{ flex: "1 1 240px" }} placeholder="Search clubs, cities or staff" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search clubs" />
         <button className="btn" onClick={() => setAdding(true)}>+ New club</button>
+        <button className="btn ghost" onClick={() => ctx.go("import")}>Import from Excel</button>
       </div>
       <div className="kpis" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))" }}>
         {list.map((c) => (
@@ -344,6 +345,110 @@ export function AuditLog() {
       <div className="tbl-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Club</th><th>Action</th><th>Record</th></tr></thead><tbody>
         {data.map((a, i) => <tr key={i}><td>{new Date(a.at).toLocaleString("en-IN")}</td><td>{a.who}</td><td>{a.club}</td><td>{a.action.replace(/_/g, " ")}</td><td>{a.entity.replace(/_/g, " ")} {a.entity_id && "#" + a.entity_id}</td></tr>)}
       </tbody></table></div>
+    </>
+  );
+}
+
+// ---------------- Excel import ----------------
+export function ImportExcel({ ctx }) {
+  const [file, setFile] = useState(null);
+  const [check, setCheck] = useState(null);
+  const [result, setResult] = useState(null);
+  const [run, busy] = useAction();
+  const toast = useToast();
+
+  async function send(commit) {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("commit", commit ? "1" : "0");
+    const r = await run(() => api("import", { method: "POST", body: fd }));
+    if (!r) return;
+    if (commit && r.created) { setResult(r); setCheck(null); ctx.refreshClubs(); toast("Import done."); }
+    else setCheck(r);
+  }
+  function downloadCsv() {
+    const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+    const lines = [["Club", "Club Owner", "Mobile", "Username", "Temporary password", "WhatsApp message"].map(q).join(",")]
+      .concat(result.logins.map((l) => [l.club, l.name, l.mobile, l.username, l.password, l.message].map(q).join(",")));
+    const url = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv" }));
+    const a = document.createElement("a"); a.href = url; a.download = "club-owner-logins.csv"; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  if (result) {
+    return (
+      <>
+        <div className="banner ok"><b>Created {result.summary.new_clubs} club(s), {result.logins.length} Club Owner login(s) and {result.coaches_created} coach(es).</b></div>
+        {result.logins.length > 0 && (
+          <>
+            <div className="banner warn" style={{ cursor: "default" }}>These temporary passwords are shown only now and work for {result.expires_hours} hours. Send each message, or download the file, before leaving this page.</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button className="btn" onClick={downloadCsv}>Download logins (CSV)</button>
+              <button className="btn ghost" onClick={() => copyText(result.logins.map((l) => l.message).join("\n\n"), toast)}>Copy all messages</button>
+            </div>
+            <div className="split even">
+              {result.logins.map((l) => (
+                <div key={l.username} className="card">
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{l.name}</b><span className="tag">{l.club}</span></div>
+                  <Kv k="Username" v={l.username} /><Kv k="Mobile" v={l.mobile} /><Kv k="Temporary password" v={l.password} />
+                  <div className="btns">
+                    <button className="btn ghost" onClick={() => copyText(l.message, toast)}>Copy message</button>
+                    <a className="btn" style={{ textDecoration: "none" }} href={`https://wa.me/91${l.mobile}?text=${encodeURIComponent(l.message)}`} target="_blank" rel="noopener">Send on WhatsApp</a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button className="btn ghost" onClick={() => ctx.go("clubs")}>See clubs</button>
+          <button className="btn ghost" onClick={() => { setResult(null); setFile(null); }}>Import another file</button>
+        </div>
+      </>
+    );
+  }
+
+  const s = check && check.summary;
+  return (
+    <>
+      <div className="split">
+        <div className="card">
+          <p className="lbl">1 · Fill in the template</p>
+          <p className="muted">Sheet <b>Clubs</b>: club, Club Owner and the Owner's upline / sponsor. Sheet <b>Coaches</b>: coach and the coach's upline / sponsor. Name, mobile and Herbalife ID are required for every person. You can fill only the Coaches sheet to add coaches to existing clubs.</p>
+          <a className="btn ghost" style={{ textDecoration: "none", alignSelf: "flex-start" }} href="/club-import-template.xlsx" download>Download template (.xlsx)</a>
+          <p className="lbl" style={{ marginTop: 8 }}>2 · Upload it</p>
+          <input className="inp" style={{ paddingTop: 10 }} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => { setFile(e.target.files[0] || null); setCheck(null); }} aria-label="Excel file" />
+          <button className="btn" style={{ width: "100%" }} disabled={!file || busy} onClick={() => send(false)}>{busy ? <span className="spin" /> : "Check file"}</button>
+          <p className="muted">Checking changes nothing. You'll see every problem with its row number first.</p>
+        </div>
+        <div className="card">
+          <p className="lbl">What gets created</p>
+          <p className="muted">A club for each new club name, one Club Owner login per club (username = Herbalife ID, or they can use their mobile), and the coaches. Each Owner gets a temporary password to change at first login.</p>
+          <p className="muted">Existing clubs are reused. Coaches already in a club (same mobile) are skipped.</p>
+        </div>
+      </div>
+      {check && !check.ok && (
+        <div className="card">
+          <div className="banner bad"><b>{check.errors.length} problem{check.errors.length > 1 ? "s" : ""} to fix.</b>&nbsp;Nothing was created. Fix these rows in Excel and upload again.</div>
+          <ul style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>{check.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+        </div>
+      )}
+      {check && check.ok && (
+        <div className="card">
+          <div className="banner ok"><b>Everything looks good.</b>&nbsp;{s.new_clubs} new club(s), {s.owners} Club Owner login(s), {s.coaches} coach(es){s.coaches_skipped ? `, ${s.coaches_skipped} already in the app` : ""}.</div>
+          {s.rows.length > 0 && (
+            <div className="tbl-wrap"><table><thead><tr><th>Club</th><th>Club Owner</th><th>Mobile</th><th>Herbalife ID</th><th>Upline</th></tr></thead><tbody>
+              {s.rows.map((r, i) => <tr key={i}><td>{r.club} {!r.new_club && <span className="tag grey">existing</span>}</td><td>{r.owner}</td><td>{r.mobile}</td><td>{r.herbalife_id}</td><td>{r.upline}</td></tr>)}
+            </tbody></table></div>
+          )}
+          {s.coach_rows.length > 0 && (
+            <div className="tbl-wrap"><table><thead><tr><th>Club</th><th>Coach</th><th>Mobile</th><th>Upline</th></tr></thead><tbody>
+              {s.coach_rows.map((r, i) => <tr key={i}><td>{r.club}</td><td>{r.coach} {r.skip && <span className="tag grey">already added</span>}</td><td>{r.mobile}</td><td>{r.upline}</td></tr>)}
+            </tbody></table></div>
+          )}
+          <button className="btn" disabled={busy} onClick={() => send(true)}>Create {s.new_clubs ? `${s.new_clubs} club(s), ` : ""}{s.owners} login(s) and {s.coaches} coach(es)</button>
+        </div>
+      )}
     </>
   );
 }
