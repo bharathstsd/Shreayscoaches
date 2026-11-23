@@ -43,6 +43,38 @@ On a phone, open the address in Chrome (Android) or Safari (iPhone) and choose *
 cd /var/www/shreyas-coupons && sudo bash deploy/update.sh
 ```
 
+## Automatic deploys
+
+Once this is set up, anything pushed to the `main` branch on GitHub goes live within about 2 minutes. The server checks GitHub itself, so no server passwords or keys are stored on GitHub.
+
+**One-time setup on the server (as root):**
+
+1. Create a read-only key for the server and print it:
+   ```bash
+   ssh-keygen -t ed25519 -f /root/.ssh/shreyas_coaches -N "" -C "coupon server"
+   cat >> /root/.ssh/config <<'CFG'
+   Host github-coaches
+     HostName github.com
+     User git
+     IdentityFile /root/.ssh/shreyas_coaches
+     IdentitiesOnly yes
+   CFG
+   cat /root/.ssh/shreyas_coaches.pub
+   ```
+2. On GitHub, open the repo → **Settings → Deploy keys → Add deploy key**. Paste the line that was printed, name it "coupon server", leave **Allow write access** unticked, and save.
+3. Point the server's copy at that key, fetch the latest code and turn auto-deploy on:
+   ```bash
+   cd /var/www/shreyas-coupons
+   git remote set-url origin git@github-coaches:bharathstsd/Shreayscoaches.git
+   ssh -o StrictHostKeyChecking=accept-new -T github-coaches; git pull
+   sudo bash deploy/install-autodeploy.sh
+   ```
+
+**Check what it did:** `journalctl -u shreyas-coupons-autodeploy -n 50`
+**Pause it:** `systemctl stop shreyas-coupons-autodeploy.timer` (start it again with `start`).
+
+If a build fails, the previous version stays live and the error shows in that log.
+
 ## Useful commands
 
 | What | Command |

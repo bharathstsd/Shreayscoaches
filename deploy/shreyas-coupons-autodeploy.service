@@ -1,0 +1,7 @@
+[Unit]
+Description=Deploy Shreyas Coupons when GitHub has new commits
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash __APP__/deploy/autodeploy.sh
