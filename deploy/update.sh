@@ -7,6 +7,10 @@ APP="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP"
 git pull -q --ff-only origin main
 "$APP/venv/bin/pip" install -q -r backend/requirements.txt
+# App log file (logins, reset requests, imports, server errors)
+mkdir -p /var/log/shreyas-coupons && touch /var/log/shreyas-coupons/app.log
+chown -R www-data:www-data /var/log/shreyas-coupons && chmod 750 /var/log/shreyas-coupons
+grep -q '^LOG_DIR=' backend/.env || echo 'LOG_DIR=/var/log/shreyas-coupons' >> backend/.env
 bash deploy/manage.sh migrate --noinput
 bash deploy/manage.sh collectstatic --noinput >/dev/null
 cd frontend

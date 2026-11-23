@@ -164,3 +164,9 @@ select.inp{appearance:auto}
 
 .toast{top:auto;bottom:calc(76px + env(safe-area-inset-bottom,0px))}
 @container app (min-width:900px){.toast{bottom:auto;top:80px}}
+
+/* login type switch */
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:14px;background:#E9E3D6}
+.seg button{min-height:42px;border:0;border-radius:10px;background:transparent;font:600 14px var(--body);color:#4A5A55;cursor:pointer}
+.seg button.on{background:#fff;color:var(--emerald);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.seg button:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}

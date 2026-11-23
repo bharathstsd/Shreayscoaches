@@ -117,3 +117,9 @@ python manage.py test core          # business-rule tests
 # App (proxies /api to localhost:8000)
 cd frontend && npm install && npm run dev
 ```
+
+## Logs
+
+- **In the app:** Super Admin → Activity log → *Logins* (who logged in, when, from which IP, and wrong-password attempts) or *Changes*.
+- **On the server:** `/var/log/shreyas-coupons/app.log` (logins, reset requests, Excel imports, server errors; rotated at 5 MB × 5),
+  or live with `sudo journalctl -u shreyas-coupons -f`. Web traffic: `/var/log/nginx/access.log`.

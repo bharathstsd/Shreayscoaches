@@ -42,13 +42,33 @@ def _mobile(v):
     return m
 
 
+def _find_sheet(wb, name):
+    """Sheet names are matched ignoring case and spaces ("coaches ", "COACHES" all work)."""
+    for n in wb.sheetnames:
+        if n.strip().lower() == name.lower():
+            return wb[n]
+    return None
+
+
+def _norm_header(h):
+    h = _cell(h).lower().replace("*", "")
+    h = re.sub(r"\(.*?\)", "", h)
+    h = h.replace("/ sponsor ", "").replace("/sponsor ", "").replace("sponsor ", "upline ").replace("supervisor ", "upline ")
+    h = re.sub(r"\b(no\.?|number|num)$", "", h.strip())
+    h = h.replace("herbalife id", "herbalife id").replace("hl id", "herbalife id").replace("phone", "mobile")
+    return re.sub(r"\s+", " ", h).strip()
+
+
 def _sheet(wb, name, cols):
-    if name not in wb.sheetnames:
+    ws = _find_sheet(wb, name)
+    if ws is None:
         return []
-    rows = list(wb[name].iter_rows(values_only=True))
+    rows = [r for r in ws.iter_rows(values_only=True)]
+    while rows and not any(_cell(v) for v in rows[0]):
+        rows.pop(0)                                   # skip blank lines above the header
     if not rows:
         return []
-    header = [_cell(h).lower().replace("/ sponsor ", "").replace("sponsor ", "upline ") for h in rows[0]]
+    header = [_norm_header(h) for h in rows[0]]
     missing = [c for c in cols if c not in header]
     if missing:
         raise ImportError_(f'Sheet "{name}" is missing columns: {", ".join(missing)}. Download the latest template.')
@@ -82,7 +102,7 @@ def check(wb):
     """Read and validate. Returns (plan, errors, summary)."""
     clubs = _sheet(wb, "Clubs", CLUB_COLS)
     coaches = _sheet(wb, "Coaches", COACH_COLS)
-    if "Clubs" not in wb.sheetnames and "Coaches" not in wb.sheetnames:
+    if _find_sheet(wb, "Clubs") is None and _find_sheet(wb, "Coaches") is None:
         raise ImportError_('The file needs a sheet named "Clubs" and/or "Coaches". Download the template.')
     errors, club_plan = [], []
     seen_user, seen_mobile, names = set(), set(), set()
@@ -177,3 +197,68 @@ def create(plan, expires_hours=72, actor=None):
             AuditLog.objects.create(actor=actor, action="import_create", entity="coach", entity_id=str(coach.pk), club=club)
             made += 1
     return {"logins": logins, "coaches_created": made, "expires": expires.isoformat(), "expires_hours": expires_hours}
+
+
+def template_bytes(include_clubs=True):
+    """Build the import template. The Coaches sheet's club column offers the clubs already in the app."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    wb = Workbook()
+    head = PatternFill("solid", fgColor="0F3B32")
+    ex = Font(italic=True, color="7A7A7A")
+    ins = wb.active
+    ins.title = "Instructions"
+    for line in ["How to fill this file", "",
+                 "Clubs sheet: one row per NEW club with its Club Owner and the Owner's upline / sponsor. Leave it empty if you are only adding coaches.",
+                 "Coaches sheet: wellness coaches with each coach's upline / sponsor. The club must already be in the app or in the Clubs sheet.",
+                 "  In the Coaches sheet, pick the club from the dropdown in column A so the name matches exactly.",
+                 "Every person needs: name, 10-digit mobile and Herbalife ID. Every upline / sponsor needs the same three.",
+                 "Rows starting with \"Example\" are ignored. Don't rename the sheets or the header row.",
+                 "Save as Excel Workbook (.xlsx), then in the app: Import from Excel -> Check file -> Create."]:
+        ins.append([line])
+    ins["A1"].font = Font(bold=True, size=14)
+    ins.column_dimensions["A"].width = 120
+
+    def sheet(title, cols, example, widths):
+        ws = wb.create_sheet(title)
+        ws.append(cols)
+        ws.append(example)
+        for c in ws[1]:
+            c.font, c.fill, c.alignment = Font(bold=True, color="FFFFFF"), head, Alignment(wrap_text=True, vertical="center")
+        for c in ws[2]:
+            c.font = ex
+        for i, w in enumerate(widths):
+            letter = chr(65 + i)
+            ws.column_dimensions[letter].width = w
+            for r in range(2, 502):
+                ws[f"{letter}{r}"].number_format = "@"      # keep mobiles and IDs as text
+        ws.freeze_panes = "A2"
+        ws.row_dimensions[1].height = 32
+        return ws
+
+    sheet("Clubs", ["Club name", "City", "Address", "Pincode", "Owner name", "Owner mobile", "Owner Herbalife ID",
+                    "Upline / sponsor name", "Upline / sponsor mobile", "Upline / sponsor Herbalife ID"],
+          ["Example — Shreyas Wellness World", "Kadapa", "Cooperative Colony", "516001", "Prasanthi Reddy", "9885529795", "W0000001",
+           "Giri Babu M S", "9676011011", "W1578045"], [30, 14, 24, 10, 22, 15, 18, 22, 18, 22])
+    co = sheet("Coaches", ["Club name", "Coach name", "Coach mobile", "Coach Herbalife ID",
+                           "Upline / sponsor name", "Upline / sponsor mobile", "Upline / sponsor Herbalife ID"],
+               ["Example — Shreyas Wellness World", "Lakshmi", "9030045678", "W0000002", "Prasanthi Reddy", "9885529795", "W0000001"],
+               [32, 22, 15, 18, 22, 18, 22])
+    names = list(Club.objects.filter(is_active=True).order_by("name").values_list("name", flat=True)) if include_clubs else []
+    if names:
+        lst = wb.create_sheet("Club list")
+        lst.append(["Clubs in the app (for the dropdown)"])
+        for n in names:
+            lst.append([n])
+        lst.sheet_state = "hidden"
+        dv = DataValidation(type="list", formula1=f"='Club list'!$A$2:$A${len(names) + 1}", allow_blank=True,
+                            showErrorMessage=False)       # still allows typing a club from the Clubs sheet
+        dv.prompt, dv.promptTitle, dv.showInputMessage = "Pick a club, or type a new club from the Clubs sheet.", "Club", True
+        co.add_data_validation(dv)
+        dv.add("A3:A500")
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()

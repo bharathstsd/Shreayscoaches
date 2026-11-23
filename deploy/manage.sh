@@ -4,4 +4,5 @@
 set -euo pipefail
 APP="$(cd "$(dirname "$0")/.." && pwd)"
 set -a; . "$APP/backend/.env"; set +a
+export LOG_DIR=""   # commands run as root log to the screen, so the app log file stays owned by www-data
 cd "$APP/backend" && exec "$APP/venv/bin/python" manage.py "$@"

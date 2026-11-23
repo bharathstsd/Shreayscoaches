@@ -2,6 +2,7 @@
 import csv
 import io
 import secrets
+import logging
 import string
 from collections import defaultdict, deque
 from datetime import timedelta
@@ -26,6 +27,12 @@ from .helpers import (audit, can_change, upline, clean_mobile, club_json, coach_
                       visit_json, write_club)
 from .models import (Allocation, AuditLog, Club, Coach, CouponIssue, CouponUnit, Customer, CvcMembership,
                      PasswordResetRequest, PrintBatch, Redemption, ReferralVisit, Trial, User, WeeklyResult)
+
+log = logging.getLogger("core")
+
+
+def client_ip(request):
+    return (request.META.get("HTTP_X_FORWARDED_FOR") or request.META.get("REMOTE_ADDR") or "").split(",")[0].strip() or None
 
 
 def _throttle(scope):
@@ -57,9 +64,19 @@ def temp_password():
 def login(request):
     ident = text(request.data, "username", label="Username or mobile")
     password = request.data.get("password") or ""
+    portal = request.data.get("portal")            # "admin" or "club" (older app versions send nothing)
     user = User.objects.filter(Q(username__iexact=ident) | Q(mobile=ident)).first()
     if not user or not user.is_active or not authenticate(request, username=user.username, password=password):
+        log.warning("login failed ident=%s portal=%s ip=%s", ident[:40], portal, client_ip(request))
+        if user:
+            AuditLog.objects.create(actor=user, club=user.club, action="login_failed", entity="user", entity_id=str(user.pk), ip=client_ip(request))
         raise Rule("Wrong username or password.")
+    if portal in ("admin", "club") and (portal == "admin") != user.is_admin:
+        right = "club" if portal == "admin" else "admin"
+        log.info("login wrong portal user=%s portal=%s", user.username, portal)
+        msg = ("These are Club Owner login details. Please use the Club Owner login." if right == "club"
+               else "These are Super Admin login details. Please use the Super Admin login.")
+        return Response({"error": msg, "code": "wrong_portal", "portal": right}, status=409)
     if not user.is_admin and user.club and not user.club.is_active:
         raise Forbidden("Your club is disabled. Please contact the Super Admin.")
     if user.must_change_password and user.temp_password_expires and user.temp_password_expires < timezone.now():
@@ -69,6 +86,8 @@ def login(request):
     token = Token.objects.create(user=user)
     user.last_login = timezone.now()
     user.save(update_fields=["last_login"])
+    AuditLog.objects.create(actor=user, club=user.club, action="login", entity="user", entity_id=str(user.pk), ip=client_ip(request))
+    log.info("login ok user=%s role=%s ip=%s", user.username, user.role, client_ip(request))
     return Response({"token": token.key, "user": user_json(user)})
 
 
@@ -76,6 +95,7 @@ def login(request):
 @permission_classes([IsAuthenticated])
 def logout(request):
     Token.objects.filter(user=request.user).delete()
+    AuditLog.objects.create(actor=request.user, club=request.user.club, action="logout", entity="user", entity_id=str(request.user.pk), ip=client_ip(request))
     return Response({"ok": True})
 
 
@@ -117,6 +137,9 @@ def forgot_password(request):
     user = User.objects.filter(Q(username__iexact=ident) | Q(mobile=ident), is_active=True).exclude(role="ADMIN").first()
     if user and not PasswordResetRequest.objects.filter(user=user, status="PENDING").exists():
         PasswordResetRequest.objects.create(user=user, identifier=ident[:150], reason=str(request.data.get("reason") or "")[:255])
+        log.info("password reset requested user=%s", user.username)
+    elif not user:
+        log.info("password reset requested for unknown or admin ident=%s", ident[:40])
     # same answer either way, so nobody can test which accounts exist
     return Response({"ok": True, "message": "If that account exists, the Super Admin will share a temporary password with you."})
 
@@ -138,22 +161,38 @@ def reset_generate(request, pk):
         raise Rule("That request doesn't exist.")
     if r.status not in ("PENDING", "GENERATED", "EXPIRED"):
         raise Rule("This request is already closed.")
+    res = _new_temp_password(request, r.user)
+    r.status, r.handled_by, r.handled_at = "GENERATED", request.user, timezone.now()
+    r.save()
+    return Response(res)
+
+
+def _new_temp_password(request, u):
     pw = temp_password()
-    u = r.user
     u.set_password(pw)
     u.must_change_password = True
     u.temp_password_expires = timezone.now() + timedelta(hours=settings.TEMP_PASSWORD_TTL_HOURS)
     u.save()
     Token.objects.filter(user=u).delete()
-    r.status, r.handled_by, r.handled_at = "GENERATED", request.user, timezone.now()
-    r.save()
     audit(request, "temp_password_generated", "user", u, club=u.club)   # never the password itself
     expires = timezone.localtime(u.temp_password_expires).strftime("%d %b %Y, %I:%M %p")
     name = u.get_full_name() or u.username
     msg = (f"Hello {name},\nYour temporary login password for Shreyas Wellness World Coupon Management System is:\n"
-           f"Username: {u.username}\nTemporary Password: {pw}\nPlease log in and change your password immediately. "
+           f"Username: {u.username}\nTemporary Password: {pw}\nPlease log in at https://{settings.SITE_HOST}/ (Club Owner login) and change your password immediately. "
            f"This password expires at {expires}.")
-    return Response({"password": pw, "message": msg, "expires": d(u.temp_password_expires)})
+    return {"password": pw, "message": msg, "expires": d(u.temp_password_expires)}
+
+
+@api_view(["POST"])
+@permission_classes([AdminOnly])
+def user_reset(request, pk):
+    """Super Admin gives a Club Owner a new temporary password without a request."""
+    u = User.objects.filter(pk=pk, is_active=True).exclude(role="ADMIN").first()
+    if not u:
+        raise Rule("That account doesn't exist.")
+    res = _new_temp_password(request, u)
+    PasswordResetRequest.objects.filter(user=u, status="PENDING").update(status="GENERATED", handled_by=request.user, handled_at=timezone.now())
+    return Response(res)
 
 
 @api_view(["POST"])
@@ -244,9 +283,9 @@ def users(request):
     if request.method == "GET":
         return Response([user_json(u) for u in User.objects.select_related("club").order_by("club__name", "role")])
     data = request.data
-    role = data.get("role")
-    if role not in ("OWNER", "SUPERVISOR"):
-        raise Rule("Choose Club Owner or Supervisor.")
+    role = data.get("role") or "OWNER"
+    if role != "OWNER":
+        raise Rule("Only Club Owner logins can be added.")
     club = Club.objects.filter(pk=data.get("club")).first()
     if not club:
         raise Rule("Choose a club.")
@@ -957,9 +996,15 @@ def export_csv(request):
 @api_view(["GET"])
 @permission_classes([AdminOnly])
 def audit_log(request):
-    qs = AuditLog.objects.select_related("actor", "club")[:300]
-    return Response([{"at": d(a.created_at), "who": a.actor.username if a.actor else "", "club": a.club.name if a.club else "",
-                      "action": a.action, "entity": a.entity, "entity_id": a.entity_id} for a in qs])
+    qs = AuditLog.objects.select_related("actor", "club")
+    kind = request.query_params.get("kind")
+    if kind == "logins":
+        qs = qs.filter(action__in=["login", "login_failed", "logout"])
+    elif kind == "changes":
+        qs = qs.exclude(action__in=["login", "login_failed", "logout"])
+    return Response([{"at": d(a.created_at), "who": a.actor.username if a.actor else "", "name": (a.actor.get_full_name() if a.actor else ""),
+                      "role": a.actor.get_role_display() if a.actor else "", "club": a.club.name if a.club else "",
+                      "action": a.action, "entity": a.entity, "entity_id": a.entity_id, "ip": a.ip or ""} for a in qs[:500]])
 
 
 # =====================================================================  EXCEL IMPORT (Super Admin)
@@ -976,7 +1021,12 @@ def import_excel(request):
     try:
         plan, errors, summary = importer.check(importer.open_workbook(f))
     except importer.ImportError_ as e:
+        log.info("import rejected file=%s: %s", f.name, e)
         raise Rule(str(e))
+    except Exception:
+        log.exception("import failed reading file=%s", f.name)
+        raise Rule("This file couldn't be read. Download the template again, copy your rows into it and upload that.")
+    log.info("import check file=%s errors=%d clubs=%d coaches=%d", f.name, len(errors), summary["clubs"], summary["coaches"])
     commit = str(request.data.get("commit", "0")) in ("1", "true", "yes")
     if errors or not commit:
         return Response({"ok": not errors, "errors": errors, "summary": summary, "created": False})
@@ -987,3 +1037,14 @@ def import_excel(request):
     res = importer.create(plan, hours, actor=request.user)
     audit(request, "excel_import", "import", None, after={"clubs": summary["new_clubs"], "owners": len(res["logins"]), "coaches": res["coaches_created"]})
     return Response({"ok": True, "errors": [], "summary": summary, "created": True, **res})
+
+
+@api_view(["GET"])
+@permission_classes([AdminOnly])
+def import_template(request):
+    """The Excel template, with the current club names as a dropdown on the Coaches sheet."""
+    from django.http import HttpResponse
+    from . import importer
+    resp = HttpResponse(importer.template_bytes(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="club-import-template.xlsx"'
+    return resp

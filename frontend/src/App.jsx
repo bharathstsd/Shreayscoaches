@@ -10,7 +10,7 @@ import { Coaches, Cvc, Launch, More, OwnerHome, Tree, Trials, Weekly } from "./s
 
 const TITLES = {
   home: "Dashboard", clubs: "Nutrition clubs", club: "Club details", coupons: "Coupon inventory", allocate: "Allocate coupons",
-  resets: "Password resets", audit: "Change log", import: "Import from Excel", customers: "Customers", customer: "Customer", issue: "Issue coupon",
+  resets: "Password resets", audit: "Activity log", import: "Import from Excel", customers: "Customers", customer: "Customer", issue: "Issue coupon",
   visits: "Visitors & redemption", more: "More", trials: "3-day trials", cvc: "CVC membership", weekly: "Weekly results",
   coaches: "Wellness coaches", tree: "Referral trees", password: "Change password",
 };
@@ -70,7 +70,7 @@ function Shell() {
       ? [["home", "Home", "home"], ["customers", "Customers", "users"], ["issue", "Issue", "coupon"], ["visits", "Visits", "door"], ["more", "More", "grid"]]
       : [["home", "Home", "home"], ["issue", "Issue", "coupon"], ["visits", "Visits", "door"], ["customers", "Customers", "users"], ["more", "More", "grid"]];
   const sideExtra = isAdmin
-    ? [["import", "Import from Excel", "upload"], ["customers", "Customers", "users"], ["issue", "Issue coupon", "coupon"], ["visits", "Visitors", "door"], ["trials", "3-day trials", "trial"], ["cvc", "CVC", "star"], ["weekly", "Weekly results", "award"], ["coaches", "Coaches", "coach"], ["tree", "Referral trees", "tree"], ["audit", "Change log", "log"]]
+    ? [["customers", "Customers", "users"], ["issue", "Issue coupon", "coupon"], ["visits", "Visitors", "door"], ["trials", "3-day trials", "trial"], ["cvc", "CVC", "star"], ["weekly", "Weekly results", "award"], ["coaches", "Coaches", "coach"], ["tree", "Referral trees", "tree"]]
     : [["trials", "3-day trials", "trial"], ["cvc", "CVC membership", "star"], ["weekly", "Weekly results", "award"], ["coaches", "Coaches", "coach"], ...(role === "OWNER" ? [["tree", "Referral trees", "tree"]] : [])];
   const roleLabel = isAdmin ? "SUPER ADMIN" + (clubName ? " · " + clubName.toUpperCase() : " · ALL CLUBS") : (role === "OWNER" ? "CLUB OWNER · " : "SUPERVISOR · ") + (user.club_name || "").toUpperCase();
   const rootOf = { club: "clubs", allocate: "coupons", customer: "customers" };
@@ -116,6 +116,7 @@ function Shell() {
       <div className="body">
         <nav className="side" aria-label="Main">
           {navBtns(nav.filter((n) => n[0] !== "more"))}
+          {isAdmin && navBtns([["import", "Import from Excel", "upload"], ["audit", "Activity log", "log"]])}
           <p className="sub">{isAdmin ? "Club work" + (clubName ? " · " + clubName : "") : "Programs"}</p>
           {navBtns(sideExtra)}
           <button className={"navb" + (name === "password" ? " on" : "")} onClick={() => go("password")}><Icon name="key" size={20} /><span>Change password</span></button>

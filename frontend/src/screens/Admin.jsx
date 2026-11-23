@@ -71,6 +71,7 @@ export function ClubDetail({ ctx, arg }) {
   const [staffForm, setStaffForm] = useState(null);
   const [confirm, setConfirm] = useState(false);
   const [newPw, setNewPw] = useState(null);
+  const [resetPwd, setResetPwd] = useState(null);
   const toast = useToast();
   if (error) return <p className="err">{error}</p>;
   if (!data) return <Loading />;
@@ -81,6 +82,10 @@ export function ClubDetail({ ctx, arg }) {
     setConfirm(false);
     const r = await run(() => api(`clubs/${c.id}/toggle`, { method: "POST" }), (x) => x.is_active ? `${c.name} enabled again.` : `${c.name} disabled. Its staff are logged out and new entries are blocked.`);
     if (r) { reload(); ctx.refreshClubs(); }
+  }
+  async function resetPw(u) {
+    const r = await run(() => api(`users/${u.id}/reset`, { method: "POST" }));
+    if (r) setResetPwd({ ...r, name: u.name });
   }
   async function removeStaff(u) {
     const r = await run(() => api(`users/${u.id}`, { method: "DELETE" }), (x) => x.message || "Account deleted.");
@@ -105,12 +110,13 @@ export function ClubDetail({ ctx, arg }) {
           </div>
           <div className="card">
             <p className="lbl">Staff logins</p>
-            <p className="muted">One Club Owner and one Supervisor per club. Username, mobile and Herbalife ID must be unique.</p>
-            {["OWNER", "SUPERVISOR"].map((role) => {
+            <p className="muted">One Club Owner login per club. Username, mobile and Herbalife ID must be unique.</p>
+            {["OWNER", ...(roles.SUPERVISOR ? ["SUPERVISOR"] : [])].map((role) => {
               const s = roles[role];
               return s ? (
                 <div key={role} className="row" style={{ cursor: "default" }}>
                   <span className="grow"><b>{s.name}</b><span className="muted">{role === "OWNER" ? "Club Owner" : "Supervisor"} · {s.username} · {s.mobile}{s.herbalife_id ? " · " + s.herbalife_id : ""}{s.upline_name ? " · upline " + s.upline_name : ""}</span></span>
+                  <button className="chip" onClick={() => resetPw(s)} disabled={busy || !c.is_active}>Reset password</button>
                   <button className="chip" onClick={() => removeStaff(s)} disabled={busy}>Remove</button>
                 </div>
               ) : (
@@ -129,6 +135,15 @@ export function ClubDetail({ ctx, arg }) {
       </div>
       {editing && <ClubForm club={c} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); reload(); ctx.refreshClubs(); }} />}
       {staffForm && <StaffForm club={c} role={staffForm} onClose={() => setStaffForm(null)} onSaved={(r) => { setStaffForm(null); setNewPw(r); reload(); ctx.refreshClubs(); }} />}
+      {resetPwd && (
+        <Sheet title={`New temporary password · ${resetPwd.name}`} onClose={() => setResetPwd(null)}>
+          <p className="muted">Shown only now. Their old password and sessions stop working.</p>
+          <div className="pwd">{resetPwd.password}</div>
+          <div className="msg">{resetPwd.message}</div>
+          <div className="btns"><button className="btn ghost" onClick={() => copyText(resetPwd.password, toast)}>Copy password</button><button className="btn" onClick={() => copyText(resetPwd.message, toast)}>Copy WhatsApp message</button></div>
+          <button className="linkbtn" onClick={() => setResetPwd(null)}>Done</button>
+        </Sheet>
+      )}
       {newPw && (
         <Sheet title="Login created" onClose={() => setNewPw(null)}>
           <p className="muted">Share this once. {newPw.user.name} must change it at first login. It expires in 24 hours.</p>
@@ -245,47 +260,76 @@ function BatchForm({ onClose, onSaved }) {
 export function Allocate({ ctx }) {
   const b = useLoad("batches");
   const a = useLoad("allocations");
+  const cl = useLoad("clubs");
   const [batch, setBatch] = useState(null);
-  const [club, setClub] = useState(null);
+  const [club, setClub] = useState(ctx.club ? Number(ctx.club) : null);
   const [s, setS] = useState("");
   const [e, setE] = useState("");
   const [run, busy] = useAction();
-  if (!b.data || !a.data) return <Loading />;
+  if (b.error || a.error || cl.error) return <p className="err">{b.error || a.error || cl.error}</p>;
+  if (!b.data || !a.data || !cl.data) return <Loading />;
+  if (!b.data.length) {
+    return (
+      <div className="card" style={{ maxWidth: 560 }}>
+        <p className="h2">Add a print batch first</p>
+        <p className="muted">Coupons are allocated from a print batch (for example batch A, #1 – #5000). Create the batch in Coupon inventory, then come back here to give a range to a club.</p>
+        <button className="btn" onClick={() => ctx.go("coupons")}>Go to Coupon inventory</button>
+      </div>
+    );
+  }
+  const active = cl.data.filter((c) => c.is_active);
   const bt = b.data.find((x) => x.id === batch) || b.data[0];
   const taken = a.data.filter((x) => x.batch === bt.code);
   const maxEnd = taken.reduce((m, x) => Math.max(m, x.end), bt.start - 1);
   const ns = parseInt(s, 10), ne = parseInt(e, 10);
+  const clubName = (active.find((c) => c.id === club) || {}).name;
   let msg = "", ok = false;
-  if (!club) msg = "Choose a club.";
+  if (!clubName) msg = "Choose a club.";
   else if (isNaN(ns) || isNaN(ne)) msg = "Enter both numbers.";
   else if (ns > ne) msg = "“From” must be smaller than “To”.";
   else if (ns < bt.start || ne > bt.end) msg = `${bt.code} only has numbers #${bt.start} – #${bt.end}.`;
   else {
     const clash = taken.find((x) => ns <= x.end && ne >= x.start);
     if (clash) msg = `Numbers #${Math.max(ns, clash.start)} – #${Math.min(ne, clash.end)} already belong to ${clash.club}. A coupon can belong to only one club.`;
-    else { msg = `${ne - ns + 1} coupons (${bt.code} #${ns} – #${ne}) will go to ${ctx.clubs.find((c) => c.id === club)?.name}.`; ok = true; }
+    else { msg = `${ne - ns + 1} coupons (${bt.code} #${ns} – #${ne}) will go to ${clubName}.`; ok = true; }
   }
   async function save() {
-    const r = await run(() => api("allocations", { method: "POST", body: { batch: bt.id, club, start: ns, end: ne } }), (x) => `${x.quantity} coupons allocated.`);
+    const r = await run(() => api("allocations", { method: "POST", body: { batch: bt.id, club, start: ns, end: ne } }), (x) => `${x.quantity} coupons allocated to ${clubName}.`);
     if (r) { ctx.refreshClubs(); ctx.go("coupons"); }
   }
+  function nextFree() {
+    if (maxEnd >= bt.end) return;
+    setS(String(maxEnd + 1));
+  }
+  const mine = club ? a.data.filter((x) => x.club_id === club) : [];
   return (
     <div className="split">
       <div className="card">
-        <p className="lbl">1 · Print batch</p>
+        <p className="lbl">1 · Club</p>
+        <Field label="Which club gets these coupons?" id="acl" as="select" value={club || ""} onChange={(x) => setClub(x.target.value ? Number(x.target.value) : null)}>
+          <option value="">Choose a club…</option>
+          {active.map((c) => <option key={c.id} value={c.id}>{c.name}{c.city ? " · " + c.city : ""}</option>)}
+        </Field>
+        {!active.length && <p className="muted">No active clubs yet. Add clubs first (Clubs or Import from Excel).</p>}
+        <p className="lbl" style={{ marginTop: 6 }}>2 · Print batch</p>
         <div className="chips">{b.data.map((x) => <button key={x.id} className={"chip" + (bt.id === x.id ? " on" : "")} onClick={() => setBatch(x.id)}>{x.code}</button>)}</div>
-        <p className="muted">{maxEnd < bt.end ? `Next free numbers in ${bt.code}: #${maxEnd + 1} – #${bt.end}` : `Every number in ${bt.code} is allocated. Print a new batch.`}</p>
-        <p className="lbl" style={{ marginTop: 6 }}>2 · Club</p>
-        <div className="chips">{ctx.clubs.filter((c) => c.is_active).map((c) => <button key={c.id} className={"chip" + (club === c.id ? " on" : "")} onClick={() => setClub(c.id)}>{c.name}</button>)}</div>
-        <p className="muted">Disabled clubs can't receive coupons.</p>
+        <p className="muted">{maxEnd < bt.end ? <>Next free numbers in {bt.code}: #{maxEnd + 1} – #{bt.end} <button type="button" className="linkbtn" style={{ display: "inline", padding: 0 }} onClick={nextFree}>Use next free</button></> : `Every number in ${bt.code} is allocated. Print a new batch.`}</p>
         <p className="lbl" style={{ marginTop: 6 }}>3 · Coupon numbers</p>
         <div className="btns"><Field label="From #" id="as" value={s} onChange={(x) => setS(x.target.value)} inputMode="numeric" /><Field label="To #" id="ae" value={e} onChange={(x) => setE(x.target.value)} inputMode="numeric" /></div>
         <div className={"banner " + (ok ? "ok" : "bad")}>{msg}</div>
         <button className="btn" style={{ width: "100%" }} disabled={!ok || busy} onClick={save}>Allocate coupons</button>
       </div>
-      <div className="card">
-        <p className="lbl">Already given out in {bt.code}</p>
-        {taken.length ? taken.map((x) => <Kv key={x.id} k={x.club} v={`#${x.start} – #${x.end}`} />) : <p className="muted">Nothing yet.</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {clubName && (
+          <div className="card">
+            <p className="lbl">{clubName} already has</p>
+            {mine.length ? mine.map((x) => <Kv key={x.id} k={x.batch} v={`#${x.start} – #${x.end}`} />) : <p className="muted">No coupons yet.</p>}
+          </div>
+        )}
+        <div className="card">
+          <p className="lbl">Already given out in {bt.code}</p>
+          {taken.length ? taken.map((x) => <Kv key={x.id} k={x.club} v={`#${x.start} – #${x.end}`} />) : <p className="muted">Nothing yet.</p>}
+        </div>
       </div>
     </div>
   );
@@ -294,6 +338,9 @@ export function Allocate({ ctx }) {
 // ---------------- password resets ----------------
 export function Resets() {
   const { data, error, reload } = useLoad("resets");
+  const users = useLoad("users");
+  const [pick, setPick] = useState("");
+  const [direct, setDirect] = useState(null);
   const [run, busy] = useAction();
   const [gen, setGen] = useState({});
   const toast = useToast();
@@ -303,6 +350,11 @@ export function Resets() {
     const x = await run(() => api(`resets/${r.id}/generate`, { method: "POST" }));
     if (x) { setGen({ ...gen, [r.id]: x }); reload(); }
   }
+  async function resetNow() {
+    const usr = (users.data || []).find((x) => String(x.id) === pick);
+    const x = await run(() => api(`users/${pick}/reset`, { method: "POST" }));
+    if (x) { setDirect({ ...x, name: usr ? usr.name : "" }); reload(); }
+  }
   async function reject(r) {
     const x = await run(() => api(`resets/${r.id}/reject`, { method: "POST", body: {} }), "Request rejected.");
     if (x) reload();
@@ -310,6 +362,26 @@ export function Resets() {
   return (
     <>
       <p className="muted" style={{ maxWidth: "62ch" }}>You never see anyone's password. You generate a one-time temporary password and send it on WhatsApp yourself. It expires in 24 hours and must be changed at first login.</p>
+      <div className="card" style={{ maxWidth: 640 }}>
+        <p className="lbl">Reset a Club Owner's password</p>
+        <p className="muted">Use this when someone calls you, without waiting for a request from the login page.</p>
+        <div className="btns" style={{ alignItems: "flex-end" }}>
+          <Field label="Club Owner" id="rsu" as="select" value={pick} onChange={(e) => { setPick(e.target.value); setDirect(null); }}>
+            <option value="">Choose…</option>
+            {(users.data || []).filter((x) => x.role !== "ADMIN" && x.is_active).map((x) => <option key={x.id} value={x.id}>{x.name} · {x.club_name || ""} · {x.username}</option>)}
+          </Field>
+          <button className="btn" disabled={!pick || busy} onClick={resetNow}>Generate password</button>
+        </div>
+        {direct && (
+          <>
+            <div className="pwd">{direct.password}</div>
+            <div className="msg">{direct.message}</div>
+            <div className="btns"><button className="btn ghost" onClick={() => copyText(direct.password, toast)}>Copy password</button><button className="btn" onClick={() => copyText(direct.message, toast)}>Copy WhatsApp message</button></div>
+            <p className="muted">This password is shown only now.</p>
+          </>
+        )}
+      </div>
+      <p className="lbl" style={{ marginTop: 6 }}>Requests from the login page</p>
       {data.length === 0 && <Empty>No password reset requests.</Empty>}
       <div className="split even">
         {data.map((r) => (
@@ -336,15 +408,29 @@ export function Resets() {
 }
 
 export function AuditLog() {
-  const { data, error } = useLoad("audit");
-  if (error) return <p className="err">{error}</p>;
-  if (!data) return <Loading />;
+  const [kind, setKind] = useState("logins");
+  const { data, error } = useLoad(`audit?kind=${kind}`);
+  const label = { login: "Logged in", login_failed: "Wrong password", logout: "Logged out" };
   return (
     <>
-      <p className="muted">The latest 300 changes. Passwords are never recorded.</p>
-      <div className="tbl-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Club</th><th>Action</th><th>Record</th></tr></thead><tbody>
-        {data.map((a, i) => <tr key={i}><td>{new Date(a.at).toLocaleString("en-IN")}</td><td>{a.who}</td><td>{a.club}</td><td>{a.action.replace(/_/g, " ")}</td><td>{a.entity.replace(/_/g, " ")} {a.entity_id && "#" + a.entity_id}</td></tr>)}
-      </tbody></table></div>
+      <div className="chips">
+        <button className={"chip" + (kind === "logins" ? " on" : "")} onClick={() => setKind("logins")}>Logins</button>
+        <button className={"chip" + (kind === "changes" ? " on" : "")} onClick={() => setKind("changes")}>Changes</button>
+      </div>
+      <p className="muted">{kind === "logins" ? "Who logged in, when and from where (latest 500). Wrong-password attempts are listed too." : "The latest 500 creates, edits and deletes. Passwords are never recorded."}</p>
+      {error ? <p className="err">{error}</p> : !data ? <Loading /> : !data.length ? <Empty>Nothing yet.</Empty> : (
+        <div className="tbl-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Club</th><th>{kind === "logins" ? "What" : "Action"}</th><th>{kind === "logins" ? "IP address" : "Record"}</th></tr></thead><tbody>
+          {data.map((a, i) => (
+            <tr key={i}>
+              <td>{new Date(a.at).toLocaleString("en-IN")}</td>
+              <td>{a.name || a.who}{a.role && <span className="muted"> · {a.role}</span>}</td>
+              <td>{a.club}</td>
+              <td>{kind === "logins" ? <span className={"tag" + (a.action === "login_failed" ? " red" : a.action === "logout" ? " grey" : "")}>{label[a.action] || a.action}</span> : a.action.replace(/_/g, " ")}</td>
+              <td>{kind === "logins" ? a.ip : <>{a.entity.replace(/_/g, " ")} {a.entity_id && "#" + a.entity_id}</>}</td>
+            </tr>
+          ))}
+        </tbody></table></div>
+      )}
     </>
   );
 }
@@ -365,6 +451,13 @@ export function ImportExcel({ ctx }) {
     if (!r) return;
     if (commit && r.created) { setResult(r); setCheck(null); ctx.refreshClubs(); toast("Import done."); }
     else setCheck(r);
+  }
+  async function downloadTemplate() {
+    const res = await run(() => api("import/template", { raw: true }));
+    if (!res) return;
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a"); a.href = url; a.download = "club-import-template.xlsx"; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
   function downloadCsv() {
     const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
@@ -414,8 +507,9 @@ export function ImportExcel({ ctx }) {
       <div className="split">
         <div className="card">
           <p className="lbl">1 · Fill in the template</p>
-          <p className="muted">Sheet <b>Clubs</b>: club, Club Owner and the Owner's upline / sponsor. Sheet <b>Coaches</b>: coach and the coach's upline / sponsor. Name, mobile and Herbalife ID are required for every person. You can fill only the Coaches sheet to add coaches to existing clubs.</p>
-          <a className="btn ghost" style={{ textDecoration: "none", alignSelf: "flex-start" }} href="/club-import-template.xlsx?v=2" download="club-import-template.xlsx">Download template (.xlsx)</a>
+          <p className="muted">Sheet <b>Clubs</b>: new club, its Club Owner and the Owner's upline / sponsor. Sheet <b>Coaches</b>: coach and the coach's upline / sponsor. Name, mobile and Herbalife ID are required for every person. To add only coaches, leave the Clubs sheet empty.</p>
+          <button type="button" className="btn ghost" style={{ alignSelf: "flex-start" }} disabled={busy} onClick={downloadTemplate}>Download template (.xlsx)</button>
+          <p className="muted">The template's Coaches sheet has a dropdown of your current clubs, so club names match exactly.</p>
           <p className="lbl" style={{ marginTop: 8 }}>2 · Upload it</p>
           <input className="inp" style={{ paddingTop: 10 }} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => { setFile(e.target.files[0] || null); setCheck(null); }} aria-label="Excel file" />
           <button className="btn" style={{ width: "100%" }} disabled={!file || busy} onClick={() => send(false)}>{busy ? <span className="spin" /> : "Check file"}</button>

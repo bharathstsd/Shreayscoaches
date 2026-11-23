@@ -17,5 +17,6 @@ urlpatterns = [
     path("issues", v.issues), path("issues/<int:pk>", v.issue_detail),
     path("visits", v.visits), path("redemptions", v.redemptions), path("redemptions/<int:pk>/void", v.redemption_void),
     path("dashboard", v.dashboard), path("referral-tree", v.referral_tree), path("export.csv", v.export_csv),
-    path("audit", v.audit_log), path("import", v.import_excel),
+    path("audit", v.audit_log), path("import", v.import_excel), path("import/template", v.import_template),
+    path("users/<int:pk>/reset", v.user_reset),
 ]

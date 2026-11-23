@@ -32,6 +32,10 @@ export async function api(path, { method = "GET", body, club, raw } = {}) {
   let data = null;
   try { data = await res.json(); } catch (e) { /* empty body */ }
   if (res.status === 401) { onUnauthorized(); throw new Error((data && data.error) || "Please log in again."); }
-  if (!res.ok) throw new Error((data && data.error) || "Something went wrong. Please try again.");
+  if (!res.ok) {
+    const err = new Error((data && data.error) || (res.status >= 500 ? "The server had a problem. Please try again in a minute." : "Something went wrong. Please try again."));
+    err.status = res.status; err.data = data || {};
+    throw err;
+  }
   return data;
 }

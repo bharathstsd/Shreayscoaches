@@ -202,14 +202,47 @@ class FlowTests(Base):
 
 
 class AccountTests(Base):
-    def test_one_supervisor_per_club_and_unique_mobile(self):
+    def test_only_club_owner_logins_and_unique_mobile(self):
         ad = self.as_(self.admin)
-        r = ad.post("/api/users", {"role": "SUPERVISOR", "club": self.a.id, "username": "sup2", "first_name": "S", "mobile": "9000000099", "herbalife_id": "HL"}, format="json")
+        up = {"upline_name": "U", "upline_mobile": "9848143809", "upline_herbalife_id": "W2"}
+        r = ad.post("/api/users", {"role": "SUPERVISOR", "club": self.b.id, "first_name": "S", "mobile": "9000000099", "herbalife_id": "HL9", **up}, format="json")
+        self.assertIn("Only Club Owner", r.data["error"])
+        r = ad.post("/api/users", {"role": "OWNER", "club": self.a.id, "first_name": "S", "mobile": "9000000099", "herbalife_id": "HL9", **up}, format="json")
         self.assertIn("already has an active", r.data["error"])
-        r = ad.post("/api/users", {"role": "SUPERVISOR", "club": self.b.id, "username": "sup2", "first_name": "S", "mobile": "9000000001", "herbalife_id": "HL"}, format="json")
+        r = ad.post("/api/users", {"role": "OWNER", "club": self.b.id, "first_name": "S", "mobile": "9000000001", "herbalife_id": "HL9", **up}, format="json")
         self.assertIn("mobile", r.data["error"])
-        r = ad.post("/api/users", {"role": "SUPERVISOR", "club": self.b.id, "username": "sup2", "first_name": "S", "mobile": "9000000099"}, format="json")
+        r = ad.post("/api/users", {"role": "OWNER", "club": self.b.id, "first_name": "S", "mobile": "9000000099", **up}, format="json")
         self.assertIn("Herbalife", r.data["error"])
+
+    def test_separate_logins_and_login_log(self):
+        cache.clear()
+        c = APIClient()
+        r = c.post("/api/auth/login", {"username": "giri", "password": "Strong#Pass1", "portal": "club"}, format="json")
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.data["portal"], "admin")
+        self.assertNotIn("token", r.data)
+        r = c.post("/api/auth/login", {"username": self.owner.username, "password": "Strong#Pass1", "portal": "admin"}, format="json")
+        self.assertEqual((r.status_code, r.data["portal"]), (409, "club"))
+        r = c.post("/api/auth/login", {"username": self.owner.username, "password": "wrong", "portal": "club"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        r = c.post("/api/auth/login", {"username": self.owner.username, "password": "Strong#Pass1", "portal": "club"}, format="json")
+        self.assertIn("token", r.data)
+        ad = self.as_(self.admin)
+        acts = [x["action"] for x in ad.get("/api/audit?kind=logins").data]
+        self.assertIn("login", acts)
+        self.assertIn("login_failed", acts)
+
+    def test_admin_direct_reset_and_template(self):
+        ad = self.as_(self.admin)
+        r = ad.post(f"/api/users/{self.owner.id}/reset")
+        self.assertEqual(r.status_code, 200)
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.must_change_password and self.owner.check_password(r.data["password"]))
+        self.assertEqual(ad.post(f"/api/users/{self.admin.id}/reset").status_code, 400)
+        r = ad.get("/api/import/template")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.content[:2] == b"PK")
+        self.assertEqual(self.as_(self.sup).get("/api/import/template").status_code, 403)
 
     def test_owner_and_coach_need_upline(self):
         ad = self.as_(self.admin)

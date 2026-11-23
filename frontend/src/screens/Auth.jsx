@@ -2,23 +2,38 @@ import { useState } from "react";
 import { api, setToken } from "../api";
 import { Field, Icon } from "../ui";
 
+const PORTALS = {
+  club: { tab: "Club Owner", title: "Club Owner login", hint: "Your Herbalife ID or registered mobile" },
+  admin: { tab: "Super Admin", title: "Super Admin login", hint: "Your Super Admin username or mobile" },
+};
+
 export function Login({ onLogin }) {
+  const [portal, setPortalState] = useState(() => { try { return localStorage.getItem("sww_portal") === "admin" ? "admin" : "club"; } catch (e) { return "club"; } });
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [err, setErr] = useState("");
+  const [wrong, setWrong] = useState(null);
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
   const [reason, setReason] = useState("");
   const [sent, setSent] = useState("");
+  const P = PORTALS[portal];
 
+  function setPortal(x) {
+    setPortalState(x); setErr(""); setWrong(null);
+    try { localStorage.setItem("sww_portal", x); } catch (e) { /* ignore */ }
+  }
   async function submit(e) {
     e.preventDefault();
-    setErr(""); setBusy(true);
+    setErr(""); setWrong(null); setBusy(true);
     try {
-      const r = await api("auth/login", { method: "POST", body: { username: u.trim(), password: p } });
+      const r = await api("auth/login", { method: "POST", body: { username: u.trim(), password: p, portal } });
       setToken(r.token);
       onLogin(r.user);
-    } catch (x) { setErr(x.message); } finally { setBusy(false); }
+    } catch (x) {
+      if (x.data && x.data.code === "wrong_portal") setWrong({ portal: x.data.portal, message: x.message });
+      else setErr(x.message);
+    } finally { setBusy(false); }
   }
   async function request(e) {
     e.preventDefault();
@@ -41,21 +56,35 @@ export function Login({ onLogin }) {
       <div className="form">
         {!forgot ? (
           <form onSubmit={submit}>
-            <p className="h2">Log in</p>
-            <Field label="Username or mobile" id="lu" value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" autoCapitalize="none" required />
+            <div className="seg" role="tablist" aria-label="Login type">
+              {Object.entries(PORTALS).map(([k, v]) => (
+                <button key={k} type="button" role="tab" aria-selected={portal === k} className={portal === k ? "on" : ""} onClick={() => setPortal(k)}>{v.tab}</button>
+              ))}
+            </div>
+            <p className="h2">{P.title}</p>
+            <Field label="Username or mobile" id="lu" value={u} onChange={(e) => setU(e.target.value)} placeholder={P.hint} autoComplete="username" autoCapitalize="none" required />
             <Field label="Password" id="lp" type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" required />
             {err && <p className="err">{err}</p>}
+            {wrong && (
+              <div className="banner warn" style={{ flexDirection: "column", alignItems: "stretch", gap: 10, cursor: "default" }}>
+                <span>{wrong.message}</span>
+                <button type="button" className="btn" onClick={() => setPortal(wrong.portal)}>Go to {PORTALS[wrong.portal].title}</button>
+              </div>
+            )}
             <button className="btn" style={{ width: "100%" }} disabled={busy}>{busy ? <span className="spin" /> : "Log in"}</button>
-            <button type="button" className="linkbtn" onClick={() => { setForgot(true); setErr(""); }}>Forgot password?</button>
+            {portal === "club"
+              ? <button type="button" className="linkbtn" onClick={() => { setForgot(true); setErr(""); setWrong(null); setSent(""); }}>Forgot password?</button>
+              : <p className="muted" style={{ textAlign: "center" }}>Forgot the Super Admin password? Reset it on the server: <code>deploy/manage.sh changepassword &lt;username&gt;</code></p>}
           </form>
         ) : (
           <form onSubmit={request}>
             <p className="h2">Forgot password</p>
-            <p className="muted">Enter your username or registered mobile. The Super Admin will send you a temporary password on WhatsApp.</p>
-            <Field label="Username or mobile" id="fu" value={u} onChange={(e) => setU(e.target.value)} required />
+            <p className="muted">Enter your Herbalife ID, username or registered mobile and tap <b>Send request</b>. The Super Admin will send you a temporary password on WhatsApp.</p>
+            <Field label="Herbalife ID, username or mobile" id="fu" value={u} onChange={(e) => setU(e.target.value)} autoCapitalize="none" required />
             <Field label="Reason (optional)" id="fr" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. changed phone" />
             {err && <p className="err">{err}</p>}
-            {sent ? <div className="banner ok">{sent}</div> : <button className="btn" style={{ width: "100%" }} disabled={busy}>Send request</button>}
+            {sent && <div className="banner ok">{sent}</div>}
+            <button className="btn" style={{ width: "100%" }} disabled={busy || !u.trim()}>{busy ? <span className="spin" /> : sent ? "Send again" : "Send request"}</button>
             <button type="button" className="linkbtn" onClick={() => { setForgot(false); setSent(""); setErr(""); }}>Back to log in</button>
           </form>
         )}
