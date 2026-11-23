@@ -24,7 +24,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api\//, /^\/django-admin\//, /^\/static\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/django-admin\//, /^\/static\//, /\.(xlsx|csv|pdf)(\?.*)?$/],
         runtimeCaching: [],   // API calls always go to the server (no stale coupon data)
       },
     }),

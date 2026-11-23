@@ -415,7 +415,7 @@ export function ImportExcel({ ctx }) {
         <div className="card">
           <p className="lbl">1 · Fill in the template</p>
           <p className="muted">Sheet <b>Clubs</b>: club, Club Owner and the Owner's upline / sponsor. Sheet <b>Coaches</b>: coach and the coach's upline / sponsor. Name, mobile and Herbalife ID are required for every person. You can fill only the Coaches sheet to add coaches to existing clubs.</p>
-          <a className="btn ghost" style={{ textDecoration: "none", alignSelf: "flex-start" }} href="/club-import-template.xlsx" download>Download template (.xlsx)</a>
+          <a className="btn ghost" style={{ textDecoration: "none", alignSelf: "flex-start" }} href="/club-import-template.xlsx?v=2" download="club-import-template.xlsx">Download template (.xlsx)</a>
           <p className="lbl" style={{ marginTop: 8 }}>2 · Upload it</p>
           <input className="inp" style={{ paddingTop: 10 }} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => { setFile(e.target.files[0] || null); setCheck(null); }} aria-label="Excel file" />
           <button className="btn" style={{ width: "100%" }} disabled={!file || busy} onClick={() => send(false)}>{busy ? <span className="spin" /> : "Check file"}</button>
