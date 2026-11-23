@@ -75,6 +75,15 @@ Once this is set up, anything pushed to the `main` branch on GitHub goes live wi
 
 If a build fails, the previous version stays live and the error shows in that log.
 
+## Adding clubs and logins in bulk from Excel
+
+1. Fill in `deploy/club-import-template.xlsx` (sheet **Clubs**: club details plus its Owner and Supervisor; optional sheet **Coaches**).
+2. Upload it to the server, e.g. as `/root/clubs.xlsx`.
+3. Check it (changes nothing): `sudo bash deploy/manage.sh import_clubs /root/clubs.xlsx`
+4. Create everything: `sudo bash deploy/manage.sh import_clubs /root/clubs.xlsx --commit`
+
+Step 4 writes `/root/logins-<date>.csv` with each person's username, temporary password (valid 72 hours) and a ready WhatsApp message. Send the messages, then delete that file. Clubs that already exist are reused; existing usernames or mobiles are reported, and nothing is created until every row is correct.
+
 ## Useful commands
 
 | What | Command |
