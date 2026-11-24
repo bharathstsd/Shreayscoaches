@@ -16,7 +16,7 @@ const ADMIN_PAGES = {
 };
 const CLUB_PAGES = {
   home: ["Home", ClubHome], desk: ["Coupon desk", DeskPage], customers: ["Customers", CustomersList], customer: ["Customer", Customer],
-  referrals: ["Referrals", ReferralsList], trials: ["3-day trials", Trials], cvc: ["CVC membership", Cvc], weekly: ["Weekly results", Weekly],
+  referrals: ["Referrals", ReferralsList], trials: ["Programs", Trials], cvc: ["Programs", Cvc], weekly: ["Programs", Weekly],
   coaches: ["Coaches", CoachesList], tree: ["Referral trees", Tree], more: ["More", More], password: ["Change password", ChangePassword],
 };
 
@@ -108,14 +108,14 @@ function Shell() {
   const [, Page] = pages[name];
 
   const nav = inClub
-    ? [["home", "Home", "home"], ["desk", "Coupon desk", "desk"], ["customers", "Customers", "users"], ["referrals", "Referrals", "ref"],
-       ["trials", "3-day trials", "trial"], ["coaches", "Coaches", "coach"]]
+    ? [["home", "Home", "home"], ["customers", "Customers", "users"], ["referrals", "Referrals", "ref"],
+       ["trials", "Programs", "trial"], ["coaches", "Coaches", "coach"]]
     : [["overview", "Overview", "home"], ["clubs", "Clubs", "clubs"], ["coupons", "Coupons", "coupon"], ["users", "Users", "users"], ["resets", "Resets", "key"],
        ["import", "Import", "upload"], ["audit", "Activity", "log"]];
-  const sideMore = inClub ? [["cvc", "CVC membership", "star"], ["weekly", "Weekly results", "award"], ...(role !== "SUPERVISOR" ? [["tree", "Referral trees", "tree"]] : [])] : [];
-  const tabs = inClub ? [...nav.filter((n) => !["trials", "coaches"].includes(n[0])), ["more", "More", "grid"]]
+  const sideMore = inClub ? (role !== "SUPERVISOR" ? [["tree", "Referral trees", "tree"]] : []) : [];
+  const tabs = inClub ? [...nav.filter((n) => n[0] !== "coaches"), ["more", "More", "grid"]]
     : [...nav.filter((n) => ["overview", "clubs", "coupons", "users"].includes(n[0])), ["more", "More", "grid"]];
-  const rootOf = { club: "clubs", allocate: "coupons", customer: "customers", weekly: inClub ? "weekly" : "", password: "" };
+  const rootOf = { club: "clubs", allocate: "coupons", customer: "customers", cvc: "trials", weekly: "trials", desk: "home", password: "" };
   const active = rootOf[name] !== undefined ? rootOf[name] : name;
   const inTabs = tabs.some((n) => n[0] === active);
   const isOn = (k, list) => active === k || (list === tabs && k === "more" && !inTabs && active !== "");
@@ -168,7 +168,7 @@ function Shell() {
       <div className="body">
         <nav className="side" aria-label="Main">
           {navBtns(nav)}
-          {sideMore.length > 0 && <><p className="sub">Programs</p>{navBtns(sideMore)}</>}
+          {sideMore.length > 0 && <><p className="sub">More</p>{navBtns(sideMore)}</>}
         </nav>
         <main className="main"><div className="content">
           {!SELF_TITLED.includes(name) && (

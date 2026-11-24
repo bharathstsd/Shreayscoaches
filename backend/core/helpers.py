@@ -1,5 +1,6 @@
 """Club scoping, edit permissions, audit logging and JSON shapes shared by the API views."""
 import re
+from datetime import timedelta
 
 from django.utils import timezone
 
@@ -134,8 +135,41 @@ def upline(data, required=True):
     return {"upline_name": name, "upline_mobile": mob, "upline_herbalife_id": hid}
 
 
+def club_owner(club):
+    """The person running the club: its Club Owner login, or a Super Admin who runs it."""
+    from .models import User
+    return User.objects.filter(club=club, role="OWNER", is_active=True).first() or (
+        club.admin_owner if club.admin_owner_id and club.admin_owner.is_active else None)
+
+
+def sync_head_coach(club):
+    """The Owner is the club's Head coach. Keep that coach record in step with their login."""
+    owner = club_owner(club)
+    Coach.objects.filter(club=club, is_head=True).exclude(user=owner).update(is_head=False, is_active=False)
+    if not owner:
+        return None
+    coach = (Coach.objects.filter(club=club, user=owner).first()
+             or (Coach.objects.filter(club=club, mobile=owner.mobile).first() if owner.mobile else None)
+             or Coach(club=club))
+    coach.user, coach.is_head, coach.is_active = owner, True, True
+    coach.name = owner.get_full_name() or owner.username
+    coach.mobile = owner.mobile or coach.mobile
+    coach.herbalife_id = owner.herbalife_id or coach.herbalife_id
+    for f in ("upline_name", "upline_mobile", "upline_herbalife_id"):
+        setattr(coach, f, getattr(owner, f) or getattr(coach, f))
+    coach.save()
+    return coach
+
+
+def head_coach(club):
+    return Coach.objects.filter(club=club, is_head=True, is_active=True).first() or sync_head_coach(club)
+
+
 def coach_for(club, coach_id, required=True):
     if not coach_id:
+        hc = head_coach(club)            # nobody picked: the Owner (Head coach) is responsible
+        if hc:
+            return hc
         if required:
             raise Rule("Choose the responsible wellness coach.")
         return None
@@ -197,6 +231,7 @@ def user_json(u):
 
 def coach_json(c):
     return {"id": c.id, "name": c.name, "mobile": c.mobile, "herbalife_id": c.herbalife_id, "is_active": c.is_active, "club": c.club_id,
+            "is_head": c.is_head,
             "upline_name": c.upline_name, "upline_mobile": c.upline_mobile, "upline_herbalife_id": c.upline_herbalife_id}
 
 
@@ -253,8 +288,22 @@ def stage(c):
 def customer_json(c, full=False):
     out = {"id": c.id, "name": c.name, "mobile": c.mobile, "gender": c.gender, "dob": d(c.dob), "notes": c.notes,
            "club": c.club_id, "coach": c.coach_id, "coach_name": c.coach.name if c.coach else None, "stage": stage(c),
-           "created_by": c.created_by_id}
+           "created_by": c.created_by_id, "created_at": d(c.created_at), "source": c.source, "source_label": c.get_source_display(),
+           "referrer_name": c.referrer_name, "referrer_mobile": c.referrer_mobile, "source_note": c.source_note}
     if full:
+        v = c.visits.select_related("issue__unit__batch", "issue__customer").prefetch_related("redemptions").first()
+        if v:
+            days = {r.day: r for r in v.redemptions.all() if not r.is_void}
+            d1 = timezone.localtime(days[1].created_at).date() if 1 in days else None
+            out["visit"] = {"id": v.id, "complimentary": v.is_complimentary, "coupon": v.coupon_label(),
+                            "coupon_number": v.issue.unit.number if v.issue_id else None, "inviter": v.inviter_name,
+                            "inviter_id": v.issue.customer_id if v.issue_id else None, "at": d(v.created_at),
+                            "expired": bool(v.issue_id and v.issue.is_expired), "paused": bool(v.issue_id and v.issue.is_paused),
+                            "days": [{"id": r.id, "day": r.day, "at": d(r.created_at)} for r in days.values()],
+                            "can_d1": 1 not in days, "can_d2": 1 in days and 2 not in days and d1 < timezone.localdate(),
+                            "d2_opens": d(d1 + timedelta(days=1)) if d1 and 2 not in days else None}
+        else:
+            out["visit"] = None
         trial = c.trial if hasattr(c, "trial") else None
         out["trial"] = trial_json(trial) if trial else None
         out["cvc"] = {"id": c.cvc.id, "start_date": d(c.cvc.start_date)} if hasattr(c, "cvc") else None
@@ -263,10 +312,35 @@ def customer_json(c, full=False):
     return out
 
 
+def trial_state(t):
+    """Plain-words status and what can be done today."""
+    today = timezone.localdate()
+    marks = [getattr(t, f"day{n}_at") for n in (1, 2, 3)]
+    done = [bool(getattr(t, f"day{n}")) for n in (1, 2, 3)]
+    n_done = sum(done)
+    last = max([timezone.localtime(m).date() for m in marks if m], default=None)
+    member = hasattr(t.customer, "cvc")
+    if member:
+        label, tone = "Joined CVC", "good"
+    elif n_done == 3:
+        label, tone = "Completed", "good"
+    elif last and (today - last).days >= 2:
+        label, tone = f"Missed · last visit {last:%d %b}", "bad"
+    elif last == today:
+        label, tone = f"Day {n_done} done today · Day {n_done + 1} tomorrow", "warn"
+    else:
+        label, tone = f"Day {n_done + 1} due today", "gold"
+    next_day = n_done + 1 if n_done < 3 else None
+    can_mark = bool(next_day and not member and (last is None or last < today))
+    undo = n_done if n_done and marks[n_done - 1] and timezone.localtime(marks[n_done - 1]).date() == today and not member else None
+    return {"label": label, "tone": tone, "next_day": next_day, "can_mark": can_mark, "undo_day": undo}
+
+
 def trial_json(t):
-    return {"id": t.id, "customer": t.customer_id, "customer_name": t.customer.name, "start_date": d(t.start_date),
-            "days": [t.day1, t.day2, t.day3], "status": t.status, "has_coupon": hasattr(t, "coupon"),
-            "created_by": t.created_by_id, "club": t.club_id}
+    return {"id": t.id, "customer": t.customer_id, "customer_name": t.customer.name, "customer_mobile": t.customer.mobile,
+            "start_date": d(t.start_date), "days": [t.day1, t.day2, t.day3], "days_at": [d(t.day1_at), d(t.day2_at), d(t.day3_at)],
+            "status": t.status, "has_coupon": hasattr(t, "coupon"), "member": hasattr(t.customer, "cvc"),
+            "created_by": t.created_by_id, "club": t.club_id, **trial_state(t)}
 
 
 def issue_status(i, v=None):
@@ -297,7 +371,7 @@ def visit_json(v):
     reds = [r for r in v.redemptions.all() if not r.is_void]
     days = {r.day for r in reds}
     return {"id": v.id, "visitor": v.visitor_id, "visitor_name": v.visitor.name, "visitor_mobile": v.visitor.mobile,
-            "coupon": v.issue.unit.label(), "inviter_name": v.inviter_name, "coach_name": v.coach.name,
+            "coupon": v.coupon_label(), "complimentary": v.is_complimentary, "inviter_name": v.inviter_name, "coach_name": v.coach.name,
             "day1": 1 in days, "day2": 2 in days, "club": v.club_id, "visited_at": d(v.created_at),
             "redemptions": [{"id": r.id, "day": r.day, "at": d(r.created_at), "created_by": r.created_by_id} for r in reds]}
 

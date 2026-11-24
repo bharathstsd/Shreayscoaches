@@ -283,8 +283,9 @@ function Setup({ ctx, steps }) {
 
 function TodayPanel({ ctx, t }) {
   const items = [];
-  t.d2_due.forEach((x) => items.push({ k: "d2" + x.coupon, ic: "door", tone: "g", title: `${x.name} · Day 2 due`, sub: `Coupon ${x.coupon} · Day 1 on ${dshort(x.day1)}`, btn: "Open", fn: () => ctx.go("desk", x.number) }));
-  t.trials.forEach((x) => items.push({ k: "t" + x.id, ic: "trial", tone: "y", title: `${x.name} · trial Day ${x.days.filter(Boolean).length + 1}`, sub: "Mark attendance when they arrive", btn: "Mark", fn: () => ctx.go("trials") }));
+  t.d2_due.forEach((x) => items.push({ k: "d2" + x.customer, ic: "door", tone: "g", title: `${x.name} · Day 2 due`, sub: `${x.number ? "Coupon " + x.coupon : "Complimentary visit"} · Day 1 on ${dshort(x.day1)}`, btn: "Open", fn: () => ctx.go("customer", x.customer) }));
+  t.trials.filter((x) => x.can_mark || x.tone === "bad").forEach((x) => items.push({ k: "t" + x.id, ic: "trial", tone: x.tone === "bad" ? "r" : "y", title: `${x.name} · ${x.label}`, sub: x.tone === "bad" ? "Call them to come back" : "Mark attendance when they arrive", btn: "Open", fn: () => ctx.go("customer", x.customer) }));
+  (t.convert || []).forEach((x) => items.push({ k: "c" + x.customer, ic: "star", tone: "g", title: `${x.name} · ready for CVC`, sub: "Completed the 3-day trial", btn: "Convert", fn: () => ctx.go("customer", x.customer) }));
   if (t.weekly_due.count) items.push({ k: "w", ic: "scale", tone: "y", title: `${t.weekly_due.count} weekly check-up${t.weekly_due.count > 1 ? "s" : ""} due`, sub: t.weekly_due.names.join(", ") + (t.weekly_due.count > 4 ? "…" : ""), btn: "Record", fn: () => ctx.go("weekly") });
   if (t.expiring) items.push({ k: "e", ic: "alert", tone: "r", title: `${t.expiring} coupon${t.expiring > 1 ? "s" : ""} expire this week`, sub: "Issued, but no friend has visited yet", btn: "See", fn: () => ctx.go("referrals", "Waiting") });
   return (
@@ -308,7 +309,9 @@ export function DeskPage({ ctx, arg }) {
 }
 
 function Desk({ ctx, initial, onChange }) {
-  const [num, setNum] = useState(initial || "");
+  const preset = initial && String(initial).startsWith("c") ? String(initial).slice(1) : null;   // "c12" = issuing to customer 12
+  const [num, setNum] = useState(preset ? "" : initial || "");
+  const [hint, setHint] = useState(null);
   const [d, setD] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -322,7 +325,14 @@ function Desk({ ctx, initial, onChange }) {
     catch (e) { setErr(e.message); setD(null); }
     finally { setLoading(false); }
   }
-  useEffect(() => { if (initial) lookup(initial); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    if (preset) {
+      api("desk/next", { club: ctx.club }).then((x) => { if (x.number) { setNum(String(x.number)); setHint(x); } }).catch(() => {});
+      api(`customers/${preset}`, { club: ctx.club }).then((c) => setHint((h) => ({ ...(h || {}), customer: c }))).catch(() => {});
+      setTimeout(() => inp.current && inp.current.focus(), 0);
+    } else if (initial) lookup(initial);
+    /* eslint-disable-next-line */
+  }, []);
   const refresh = (msg) => { setFlash(msg || null); lookup(d.number, d.batch).then(() => onChange && onChange()); };
   const reset = () => { setD(null); setNum(""); setFlash(null); setTimeout(() => inp.current && inp.current.focus(), 0); };
   return (
@@ -334,10 +344,12 @@ function Desk({ ctx, initial, onChange }) {
           <label className="pre" htmlFor="dn"><span>#</span><input ref={inp} id="dn" inputMode="numeric" placeholder="e.g. 35" value={num} onChange={(e) => setNum(e.target.value)} autoComplete="off" aria-label="Coupon number" /></label>
           <button className="btn" disabled={loading}>{loading ? <span className="spin" /> : "Go"}</button>
         </form>
-        <p className="hint">Issue it, register the friend, record Day 1 and Day 2, or start the trial. The desk shows only the next step.</p>
+        {hint && hint.customer ? (
+          <p className="hint" style={{ color: "#fff" }}>Issuing a coupon to <b>{hint.customer.name}</b>.{hint.number ? <> Next in stock: <b>{hint.label}</b>. Check it matches the leaflet, then tap Go.</> : " Type the number on the leaflet."}</p>
+        ) : <p className="hint">Issue it, register the friend, record Day 1 and Day 2, or start the trial. The desk shows only the next step.</p>}
       </section>
       {err && <div className="alert bad">{err}</div>}
-      {d && <section className="panel"><DeskResult ctx={ctx} d={d} flash={flash} refresh={refresh} reset={reset} choose={(b) => lookup(d.number, b)} /></section>}
+      {d && <section className="panel"><DeskResult ctx={ctx} d={d} flash={flash} refresh={refresh} reset={reset} choose={(b) => lookup(d.number, b)} preset={preset} /></section>}
     </>
   );
 }
@@ -348,7 +360,7 @@ function Steps({ done, now }) {
   return <div className="steps">{L.map((l, i) => <span key={l} className={"step " + (i < done ? "done" : i === now ? "now" : "")}><span className="c">{i < done ? "✓" : i + 1}</span>{l}</span>)}</div>;
 }
 
-function DeskResult({ ctx, d, flash, refresh, reset, choose }) {
+function DeskResult({ ctx, d, flash, refresh, reset, choose, preset }) {
   const [run, busy] = useAction();
   const [voiding, setVoiding] = useState(null);
   const [pausing, setPausing] = useState(false);
@@ -365,7 +377,7 @@ function DeskResult({ ctx, d, flash, refresh, reset, choose }) {
       <div className="pick">{d.choices.map((c) => <button key={c.batch_id} onClick={() => choose(c.batch_id)} style={{ borderLeft: "6px solid " + c.color }}><span className="t"><b>{c.batch}</b><i>#{d.number}</i></span><span className="pill grey">{c.status}</span></button>)}</div>
     </>);
   }
-  if (d.state === "stock") return <IssueFlow ctx={ctx} d={d} reset={reset} />;
+  if (d.state === "stock") return <IssueFlow ctx={ctx} d={d} reset={reset} preset={preset} />;
 
   const head = (pill, tone, title, sub) => (
     <div className="coupon"><Ticket d={d} /><div><span className={"pill " + tone} style={{ alignSelf: "flex-start" }}>{pill}</span><span className="big">{title}</span><span className="muted">{sub}</span></div></div>
@@ -479,7 +491,7 @@ function VisitForm({ ctx, d, onDone }) {
   );
 }
 
-function IssueFlow({ ctx, d, reset }) {
+function IssueFlow({ ctx, d, reset, preset }) {
   const toast = useToast();
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim(), 250);
@@ -495,7 +507,9 @@ function IssueFlow({ ctx, d, reset }) {
     const c = await run(() => api(`customers/${id}`, { club: ctx.club }));
     if (c) { setCust(c); setNc(null); const first = c.purposes.find((p) => !p.locked); setPurpose(first ? first.key : ""); }
   }
-  const coachId = cust && cust.coach ? cust.coach : coach;
+  useEffect(() => { if (preset) pickCustomer(preset); /* eslint-disable-next-line */ }, [preset]);
+  const headId = ((coaches.data || []).find((c) => c.is_head && c.is_active) || {}).id;
+  const coachId = cust && cust.coach ? cust.coach : coach || headId || "";
   const purposes = cust ? cust.purposes : [
     { key: "TRIAL", label: "3 Days Trial", hint: "Starts the trial · once per mobile number, ever", locked: false, state: "Available" },
     { key: "CVC", label: "CVC Membership", hint: "Needs a completed trial", locked: true, state: "Locked" },
@@ -545,7 +559,7 @@ function IssueFlow({ ctx, d, reset }) {
         {(cust || nc) && (cust && cust.coach ? <div className="alert info">Coach from profile: <b>{cust.coach_name}</b></div> : (
           <>
             <span className="lbl">Responsible coach</span>
-            <div className="chips">{(coaches.data || []).filter((c) => c.is_active).map((c) => <button key={c.id} className={"chip" + (String(coach) === String(c.id) ? " on" : "")} onClick={() => setCoach(c.id)}>{c.name}</button>)}</div>
+            <div className="chips">{(coaches.data || []).filter((c) => c.is_active).map((c) => <button key={c.id} className={"chip" + (String(coachId) === String(c.id) ? " on" : "")} onClick={() => setCoach(c.id)}>{c.name}{c.is_head ? " · Head coach" : ""}</button>)}</div>
             {coaches.data && !coaches.data.some((c) => c.is_active) && <p className="muted">No active coaches. Add one under Coaches first.</p>}
           </>
         ))}
@@ -578,17 +592,17 @@ function qs(obj) {
 }
 
 export function CustomersList({ ctx }) {
-  const [f, setF] = useState({ q: "", stage: "", coach: "", joined: "", sort: "" });
+  const [f, setF] = useState({ q: "", stage: "", coach: "", joined: "", sort: "", source: "" });
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState([]);
   const dq = useDebounced(f.q.trim());
   const coaches = useLoad("coaches", { club: ctx.club });
   const [adding, setAdding] = useState(false);
   const { data, error } = useLoad(`list/customers?${qs({ ...f, q: dq, page })}`, { club: ctx.club });
-  useEffect(() => { setPage(1); }, [dq, f.stage, f.coach, f.joined, f.sort]);
+  useEffect(() => { setPage(1); }, [dq, f.stage, f.coach, f.joined, f.sort, f.source]);
   useEffect(() => { if (data) setRows((r) => (data.page === 1 ? data.results : [...r, ...data.results])); }, [data]);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const clear = (k) => setF(k === "*" ? { q: "", stage: "", coach: "", joined: "", sort: f.sort } : { ...f, [k]: "" });
+  const clear = (k) => setF(k === "*" ? { q: "", stage: "", coach: "", joined: "", sort: f.sort, source: "" } : { ...f, [k]: "" });
   const coachName = (id) => ((coaches.data || []).find((c) => String(c.id) === String(id)) || {}).name || (id === "none" ? "No coach" : "");
   const JOINED = { week: "This week", month: "This month", "3m": "Last 3 months" };
   return (
@@ -598,13 +612,14 @@ export function CustomersList({ ctx }) {
         <div className="top2">
           <label className="sinp" htmlFor="fq"><Icon name="search" size={18} /><input id="fq" placeholder="Search name or mobile" value={f.q} onChange={(e) => set("q", e.target.value)} autoComplete="off" /></label>
           <select className="sel" aria-label="Coach" value={f.coach} onChange={(e) => set("coach", e.target.value)}><option value="">All coaches</option>{(coaches.data || []).map((c) => <option key={c.id} value={c.id}>{c.name}{c.is_active ? "" : " (inactive)"}</option>)}<option value="none">No coach</option></select>
+          <select className="sel" aria-label="How they came" value={f.source} onChange={(e) => set("source", e.target.value)}><option value="">Any source</option><option value="WALKIN">Walk-in</option><option value="COUPON">Invitation coupon</option><option value="EXTERNAL">Referred from outside</option><option value="OTHER">Other</option></select>
           <select className="sel" aria-label="Joined" value={f.joined} onChange={(e) => set("joined", e.target.value)}><option value="">Joined any time</option>{Object.entries(JOINED).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
           <select className="sel" aria-label="Sort" value={f.sort} onChange={(e) => set("sort", e.target.value)}><option value="">Newest first</option><option value="name">Name A–Z</option><option value="invited">Most friends invited</option></select>
         </div>
         <div className="fchips" role="group" aria-label="Stage">
           {["", "New", "Visitor", "In trial", "Trial done", "CVC member"].map((s) => <button key={s || "all"} className={"chip" + (f.stage === s ? " on" : "")} onClick={() => set("stage", s)}>{s || "All"}{data && <span className="n">{data.counts[s || "All"]}</span>}</button>)}
         </div>
-        <Applied items={[["q", "Search", dq], ["stage", "Stage", f.stage], ["coach", "Coach", f.coach && coachName(f.coach)], ["joined", "Joined", JOINED[f.joined]]]} clear={clear} />
+        <Applied items={[["q", "Search", dq], ["stage", "Stage", f.stage], ["coach", "Coach", f.coach && coachName(f.coach)], ["joined", "Joined", JOINED[f.joined]], ["source", "Came", { WALKIN: "Walk-in", COUPON: "Invitation coupon", EXTERNAL: "Referred from outside", OTHER: "Other" }[f.source]]]} clear={clear} />
       </section>
       <section className="panel">
         {error ? <p className="err">{error}</p> : !data ? <Loading /> : rows.length === 0 ? <div className="empty"><b>No customers match</b>{(dq || f.stage || f.coach || f.joined) && <><br /><button className="linkbtn" onClick={() => clear("*")}>Clear filters</button></>}</div> : <>
@@ -653,9 +668,9 @@ export function ReferralsList({ ctx, arg }) {
         {error ? <p className="err">{error}</p> : !data ? <Loading /> : data.results.length === 0 ? <div className="empty"><b>No coupons match</b>{(dq || f.status || f.coach || f.batch) && <><br /><button className="linkbtn" onClick={() => clear("*")}>Clear filters</button></>}</div> : <>
           <span className="muted">{data.total} coupon{data.total === 1 ? "" : "s"}{data.total > data.results.length ? ` · showing the latest ${data.results.length}` : ""}</span>
           <div className="tw tblonly"><table><thead><tr><th>Coupon</th><th>Given to</th><th>Friend</th><th>Status</th><th>Coach</th><th className="r">Issued</th><th className="r">Valid until</th></tr></thead><tbody>
-            {data.results.map((r) => <tr key={r.id} className="click" onClick={() => ctx.go("desk", r.number)}><td><b style={{ fontWeight: 500 }}><Hl text={r.coupon} q={dq} /></b></td><td><Hl text={r.holder} q={dq} /></td><td>{r.visitor ? <Hl text={r.visitor} q={dq} /> : <span className="muted">—</span>}</td><td><span className={"pill " + REF_PILL[r.status]}>{r.status}</span></td><td>{r.coach}</td><td className="r muted">{dshort(r.issued_at)}</td><td className="r muted">{dshort(r.expires_on)}</td></tr>)}
+            {data.results.map((r) => <tr key={r.id} className="click" onClick={() => (r.number ? ctx.go("desk", r.number) : ctx.go("customer", r.visitor_id))}><td><b style={{ fontWeight: 500 }}><Hl text={r.coupon} q={dq} /></b></td><td><Hl text={r.holder} q={dq} /></td><td>{r.visitor ? <Hl text={r.visitor} q={dq} /> : <span className="muted">—</span>}</td><td><span className={"pill " + REF_PILL[r.status]}>{r.status}</span></td><td>{r.coach}</td><td className="r muted">{dshort(r.issued_at)}</td><td className="r muted">{r.expires_on ? dshort(r.expires_on) : "—"}</td></tr>)}
           </tbody></table></div>
-          <div className="cards">{data.results.map((r) => <button key={r.id} className="pc" onClick={() => ctx.go("desk", r.number)}><span className="t"><b><Hl text={r.coupon} q={dq} /></b><i><Hl text={r.holder} q={dq} />{r.visitor ? <> → <Hl text={r.visitor} q={dq} /></> : " · waiting for a friend"} · until {dshort(r.expires_on)}</i></span><span className={"pill " + REF_PILL[r.status]}>{r.status}</span></button>)}</div>
+          <div className="cards">{data.results.map((r) => <button key={r.id} className="pc" onClick={() => (r.number ? ctx.go("desk", r.number) : ctx.go("customer", r.visitor_id))}><span className="t"><b><Hl text={r.coupon} q={dq} /></b><i><Hl text={r.holder} q={dq} />{r.visitor ? <> → <Hl text={r.visitor} q={dq} /></> : " · waiting for a friend"} · until {dshort(r.expires_on)}</i></span><span className={"pill " + REF_PILL[r.status]}>{r.status}</span></button>)}</div>
         </>}
       </section>
     </>
@@ -698,10 +713,10 @@ export function CoachesList({ ctx, arg }) {
       <section className="panel">
         {error ? <p className="err">{error}</p> : !data ? <Loading /> : data.results.length === 0 ? <div className="empty"><b>No coaches match</b></div> : <>
           <div className="tw tblonly"><table><thead><tr><th>Coach</th><th>Herbalife ID</th><th>Mobile</th><th>Upline</th><th className="r">Customers</th><th className="r">Coupons</th><th className="r">Trials</th><th className="r">CVC</th>{canEdit && <th />}</tr></thead><tbody>
-            {data.results.map((c) => <tr key={c.id}><td><b style={{ fontWeight: 500 }}><Hl text={c.name} q={dq} /></b> {!c.is_active && <span className="pill grey">Inactive</span>}</td><td className="num"><Hl text={c.herbalife_id} q={dq} /></td><td className="num"><Hl text={mob(c.mobile)} q={dq} /></td><td className="muted">{c.upline_name || "—"}</td><td className="r num">{c.customers}</td><td className="r num">{c.issued}</td><td className="r num">{c.trials}</td><td className="r"><span className={"pill " + (c.cvc ? "good" : "grey")}>{c.cvc}</span></td>
-              {canEdit && <td className="r"><button className="chip" onClick={() => setForm(c)}>Edit</button> <button className="chip" onClick={() => toggle(c)}>{c.is_active ? "Deactivate" : "Activate"}</button></td>}</tr>)}
+            {data.results.map((c) => <tr key={c.id}><td><b style={{ fontWeight: 500 }}><Hl text={c.name} q={dq} /></b> {c.is_head && <span className="pill gold">Head coach · Owner</span>} {!c.is_active && <span className="pill grey">Inactive</span>}</td><td className="num"><Hl text={c.herbalife_id} q={dq} /></td><td className="num"><Hl text={mob(c.mobile)} q={dq} /></td><td className="muted">{c.upline_name || "—"}</td><td className="r num">{c.customers}</td><td className="r num">{c.issued}</td><td className="r num">{c.trials}</td><td className="r"><span className={"pill " + (c.cvc ? "good" : "grey")}>{c.cvc}</span></td>
+              {canEdit && <td className="r">{c.is_head ? <span className="muted">Follows the Owner's login</span> : <><button className="chip" onClick={() => setForm(c)}>Edit</button> <button className="chip" onClick={() => toggle(c)}>{c.is_active ? "Deactivate" : "Activate"}</button></>}</td>}</tr>)}
           </tbody></table></div>
-          <div className="cards">{data.results.map((c) => <button key={c.id} className="pc" onClick={() => canEdit && setForm(c)}><span className="t"><b><Hl text={c.name} q={dq} /></b><i><Hl text={c.herbalife_id} q={dq} /> · {c.customers} customers · {c.issued} coupons</i></span><span className={"pill " + (c.cvc ? "good" : "grey")}>{c.cvc} CVC</span></button>)}</div>
+          <div className="cards">{data.results.map((c) => <button key={c.id} className="pc" onClick={() => canEdit && !c.is_head && setForm(c)}><span className="t"><b><Hl text={c.name} q={dq} />{c.is_head ? " · Head coach" : ""}</b><i><Hl text={c.herbalife_id} q={dq} /> · {c.customers} customers · {c.issued} coupons</i></span><span className={"pill " + (c.cvc ? "good" : "grey")}>{c.cvc} CVC</span></button>)}</div>
         </>}
       </section>
       {form && <CoachForm ctx={ctx} coach={form.id ? form : null} onClose={() => setForm(null)} onSaved={() => { setForm(null); reload(); }} extra={form.id && canEdit ? <button type="button" className="btn ghost" onClick={() => { toggle(form); setForm(null); }}>{form.is_active ? "Mark inactive" : "Mark active"}</button> : null} />}

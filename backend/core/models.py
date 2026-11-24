@@ -72,9 +72,12 @@ class Coach(Tracked):
     upline_mobile = models.CharField(max_length=15, blank=True)
     upline_herbalife_id = models.CharField(max_length=40, blank=True)
     is_active = models.BooleanField(default=True)
+    # The club's Owner is its Head coach. Their coach record follows their login (name, mobile, IDs).
+    user = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="coach_roles")
+    is_head = models.BooleanField(default=False)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["-is_head", "name"]
 
 
 class PrintBatch(Tracked):
@@ -132,6 +135,11 @@ class Customer(Tracked):
     notes = models.TextField(blank=True)
     coach = models.ForeignKey(Coach, null=True, blank=True, on_delete=models.PROTECT, related_name="customers")
     is_deleted = models.BooleanField(default=False)
+    SOURCES = [("WALKIN", "Walk-in"), ("COUPON", "Invitation coupon"), ("EXTERNAL", "Referred by someone not in the app"), ("OTHER", "Other")]
+    source = models.CharField(max_length=10, choices=SOURCES, default="WALKIN")
+    referrer_name = models.CharField(max_length=120, blank=True)     # for EXTERNAL: friend outside the app / another club
+    referrer_mobile = models.CharField(max_length=15, blank=True)
+    source_note = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -144,6 +152,9 @@ class Trial(Tracked):
     day1 = models.BooleanField(default=False)
     day2 = models.BooleanField(default=False)
     day3 = models.BooleanField(default=False)
+    day1_at = models.DateTimeField(null=True, blank=True)
+    day2_at = models.DateTimeField(null=True, blank=True)
+    day3_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     @property
@@ -154,7 +165,7 @@ class Trial(Tracked):
     def status(self):
         if self.is_completed:
             return "COMPLETED"
-        return "IN_PROGRESS" if (self.day1 or self.day2 or self.day3) else "REGISTERED"
+        return "IN_PROGRESS" if (self.day1 or self.day2 or self.day3) else "NOT_STARTED"
 
 
 class CvcMembership(Tracked):
@@ -203,7 +214,16 @@ class CouponIssue(Tracked):
 
 
 class ReferralVisit(Tracked):
-    issue = models.OneToOneField(CouponIssue, on_delete=models.PROTECT, related_name="visit")  # one visitor per coupon
+    # One visitor per coupon. No coupon = complimentary visit for someone referred from outside the app.
+    issue = models.OneToOneField(CouponIssue, null=True, blank=True, on_delete=models.PROTECT, related_name="visit")
+    note = models.CharField(max_length=255, blank=True)
+
+    @property
+    def is_complimentary(self):
+        return self.issue_id is None
+
+    def coupon_label(self):
+        return self.issue.unit.label() if self.issue_id else "Complimentary"
     visitor = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="visits")
     club = models.ForeignKey(Club, on_delete=models.PROTECT)
     coach = models.ForeignKey(Coach, on_delete=models.PROTECT)

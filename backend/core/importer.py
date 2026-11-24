@@ -196,6 +196,9 @@ def create(plan, expires_hours=72, actor=None):
             coach = Coach.objects.create(club=club, name=c["coach name"], mobile=c["mobile"], herbalife_id=c["coach herbalife id"], created_by=actor, **c["upline"])
             AuditLog.objects.create(actor=actor, action="import_create", entity="coach", entity_id=str(coach.pk), club=club)
             made += 1
+        from .helpers import sync_head_coach
+        for club in set(club_by_name.values()) | {Club.objects.get(name__iexact=c["club name"]) for c in plan["coaches"] if not c["skip"]}:
+            sync_head_coach(club)          # each Owner becomes the club's Head coach
     return {"logins": logins, "coaches_created": made, "expires": expires.isoformat(), "expires_hours": expires_hours}
 
 

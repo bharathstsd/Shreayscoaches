@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from .auth import NotSupervisor
 from .errors import Rule
-from .helpers import d, issue_status, read_club
+from .helpers import d, issue_status, read_club, trial_state as _tstate
 from .models import (Allocation, Club, Coach, CouponIssue, CouponUnit, Customer, CvcMembership, PasswordResetRequest,
                      PrintBatch, Redemption, ReferralVisit, Trial, User, WeeklyResult)
 
@@ -74,6 +74,16 @@ def _desk_unit(unit, club, user):
     else:
         out["state"] = "waiting"
     return out
+
+
+@api_view(["GET"])
+def desk_next(request):
+    """The next coupon number in this club's stock (to suggest when issuing)."""
+    club = _need_club(request)
+    u = CouponUnit.objects.filter(club=club, status="ALLOCATED").select_related("batch").order_by("batch__code", "number").first()
+    if not u:
+        return Response({"number": None})
+    return Response({"number": u.number, "batch": u.batch.code, "batch_id": u.batch_id, "label": u.label()})
 
 
 @api_view(["GET"])
@@ -193,12 +203,18 @@ def customer_list(request):
         counts[s] = qs.filter(_stage_q(s)).count()
     if p.get("stage") and _stage_q(p["stage"]) is not None:
         qs = qs.filter(_stage_q(p["stage"]))
+    sources = dict(qs.values_list("source").annotate(n=Count("id")).values_list("source", "n"))
+    counts["sources"] = sources
+    if p.get("source"):
+        qs = qs.filter(source=p["source"])
     qs = qs.annotate(invited=Count("issues__visit", distinct=True))
     order = {"name": ["name"], "invited": ["-invited", "name"]}.get(p.get("sort"), ["-created_at"])
     total = qs.count()
     page = max(1, int(p.get("page") or 1))
     size = 50
     rows = [_cust_row(c, admin) for c in qs.order_by(*order)[(page - 1) * size: page * size]]
+    for r, c in zip(rows, qs.order_by(*order)[(page - 1) * size: page * size]):
+        r["source"], r["source_label"] = c.source, c.get_source_display()
     return Response({"total": total, "counts": counts, "page": page, "pages": max(1, -(-total // size)), "results": rows})
 
 
@@ -232,6 +248,22 @@ def referral_list(request):
     if p.get("batch"):
         qs = qs.filter(unit__batch__code=p["batch"])
     rows = [_ref_row(i, admin) for i in qs[:3000]]
+    if not p.get("batch"):
+        cq = ReferralVisit.objects.filter(issue__isnull=True).select_related("visitor", "coach", "club").prefetch_related("redemptions")
+        if club:
+            cq = cq.filter(club=club)
+        if p.get("q"):
+            cq = cq.filter(_text_q(p["q"].strip(), "visitor__name", "visitor__mobile", "inviter_name", "inviter_mobile"))
+        if p.get("coach"):
+            cq = cq.filter(coach_id=p["coach"])
+        for v in cq[:500]:
+            days = {r.day for r in v.redemptions.all() if not r.is_void}
+            rows.append({"id": -v.id, "coupon": "Complimentary", "number": None, "batch": "", "holder": v.inviter_name + " (not in app)",
+                         "holder_mobile": v.inviter_mobile, "visitor": v.visitor.name, "visitor_id": v.visitor_id, "visitor_mobile": v.visitor.mobile,
+                         "status": "Day 2 done" if 2 in days else "Day 1 done" if 1 in days else "Friend registered", "coach": v.coach.name,
+                         "coach_id": v.coach_id, "issued_at": d(v.created_at), "expires_on": None, "purpose": "Complimentary",
+                         "club": v.club.name if admin else None, "club_id": v.club_id})
+        rows.sort(key=lambda r: r["issued_at"], reverse=True)
     counts = {"All": len(rows), **{s: 0 for s in REF_STATUSES}}
     for r in rows:
         counts[r["status"]] += 1
@@ -259,9 +291,9 @@ def coach_list(request):
                      n_issued=Count("couponissue", distinct=True),
                      n_trials=Count("customers__trial", distinct=True),
                      n_cvc=Count("customers__cvc", distinct=True))
-    order = {"name": ["name"], "issued": ["-n_issued", "name"]}.get(p.get("sort"), ["-n_cvc", "-n_issued", "name"])
+    order = ["-is_head"] + {"name": ["name"], "issued": ["-n_issued", "name"]}.get(p.get("sort"), ["-n_cvc", "-n_issued", "name"])
     return Response({"counts": counts, "results": [{
-        "id": c.id, "name": c.name, "mobile": c.mobile, "herbalife_id": c.herbalife_id, "is_active": c.is_active,
+        "id": c.id, "name": c.name, "mobile": c.mobile, "herbalife_id": c.herbalife_id, "is_active": c.is_active, "is_head": c.is_head,
         "upline_name": c.upline_name, "upline_mobile": c.upline_mobile, "upline_herbalife_id": c.upline_herbalife_id,
         "customers": c.n_customers, "issued": c.n_issued, "trials": c.n_trials, "cvc": c.n_cvc, "club": c.club.name if admin else None,
         "club_id": c.club_id} for c in qs.order_by(*order)]})
@@ -342,7 +374,7 @@ def _spark(club_q, start, end):
 
 
 def _top_inviters(club_q, start, end, admin):
-    visits = _between(ReferralVisit.objects.filter(**club_q), "created_at", start, end).select_related("issue__customer", "visitor", "club")
+    visits = _between(ReferralVisit.objects.filter(issue__isnull=False, **club_q), "created_at", start, end).select_related("issue__customer", "visitor", "club")
     agg = defaultdict(lambda: {"friends": 0, "converted": 0})
     for v in visits:
         k = (v.issue.customer_id, v.issue.customer.name, v.club.name)
@@ -366,22 +398,25 @@ def _coach_rank(club, start, end):
 def _today(club):
     today = timezone.localdate()
     monday = today - timedelta(days=today.weekday())
-    visits = (ReferralVisit.objects.filter(club=club, issue__is_paused=False).filter(Q(issue__expires_on__isnull=True) | Q(issue__expires_on__gte=today))
+    visits = (ReferralVisit.objects.filter(club=club).filter(Q(issue__isnull=True) | Q(issue__is_paused=False))
+              .filter(Q(issue__isnull=True) | Q(issue__expires_on__isnull=True) | Q(issue__expires_on__gte=today))
               .select_related("visitor", "issue__unit__batch").prefetch_related("redemptions"))
     d2_due = []
     for v in visits.filter(redemptions__day=1, redemptions__is_void=False).distinct():
         days = _visit_days(v)
         if 1 in days and 2 not in days and timezone.localtime(days[1].created_at).date() < today:
-            d2_due.append({"name": v.visitor.name, "coupon": v.issue.unit.label(), "number": v.issue.unit.number, "batch_id": v.issue.unit.batch_id,
-                           "day1": d(days[1].created_at)})
-    in_trial = Trial.objects.filter(club=club, completed_at__isnull=True, created_at__date__gte=today - timedelta(days=14)).select_related("customer")
+            d2_due.append({"name": v.visitor.name, "customer": v.visitor_id, "coupon": v.coupon_label(),
+                           "number": v.issue.unit.number if v.issue_id else None, "day1": d(days[1].created_at)})
+    in_trial = [t for t in Trial.objects.filter(club=club, completed_at__isnull=True, created_at__date__gte=today - timedelta(days=21)).select_related("customer")
+                if not hasattr(t.customer, "cvc")]
     cvc_ids = CvcMembership.objects.filter(club=club).values_list("customer_id", flat=True)
     done_week = WeeklyResult.objects.filter(club=club, week_start=monday).values_list("customer_id", flat=True)
     weekly_due = Customer.objects.filter(pk__in=cvc_ids, is_deleted=False).exclude(pk__in=done_week).order_by("name")
     expiring = CouponIssue.objects.filter(club=club, visit__isnull=True, is_paused=False, expires_on__gte=today, expires_on__lte=today + timedelta(days=7))
     return {
         "d2_due": d2_due[:20],
-        "trials": [{"id": t.id, "name": t.customer.name, "days": [t.day1, t.day2, t.day3]} for t in in_trial[:20]],
+        "trials": [{"id": t.id, "customer": t.customer_id, "name": t.customer.name, "days": [t.day1, t.day2, t.day3], **_tstate(t)} for t in in_trial[:20]],
+        "convert": [{"customer": t.customer_id, "name": t.customer.name} for t in Trial.objects.filter(club=club, completed_at__isnull=False, customer__cvc__isnull=True).select_related("customer")[:10]],
         "weekly_due": {"count": weekly_due.count(), "names": [c.name for c in weekly_due[:4]]},
         "expiring": expiring.count(),
     }

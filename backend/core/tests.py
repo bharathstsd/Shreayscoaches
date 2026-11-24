@@ -48,6 +48,13 @@ class Base(TestCase):
     def unit(self, batch_code, n):
         return CouponUnit.objects.get(batch__code=batch_code, number=n).id
 
+    def finish_trial(self, tid):
+        """Mark all 3 days as if they were on 3 earlier dates."""
+        from datetime import timedelta as _td
+        now = timezone.now()
+        Trial.objects.filter(pk=tid).update(day1=True, day2=True, day3=True, day1_at=now - _td(days=3), day2_at=now - _td(days=2),
+                                            day3_at=now - _td(days=1), completed_at=now - _td(days=1))
+
 
 class InventoryTests(Base):
     def test_same_number_in_two_batches_allowed_and_allocation_overlap_rejected(self):
@@ -64,7 +71,7 @@ class InventoryTests(Base):
         ad, ow = self.as_(self.admin), self.as_(self.owner)
         b = self.batch(ad)
         self.assertEqual(self.alloc(ow, b["id"], self.a, 1, 5).status_code, 403)
-        ad.post(f"/api/clubs/{self.b.id}/toggle")
+        Club.objects.filter(pk=self.b.id).update(is_active=False)
         self.assertEqual(self.alloc(ad, b["id"], self.b, 1, 5).status_code, 400)
 
     def test_batch_delete_blocked_once_issued(self):
@@ -110,7 +117,7 @@ class FlowTests(FlowBase):
         self.assertEqual(self.issue(self.ow, self.ravi, 1, "TRIAL").status_code, 201)   # starts the trial too
         self.assertIn("already given", self.issue(self.ow, self.ravi, 2, "TRIAL").data["error"])
         t = Trial.objects.get(customer_id=self.ravi)
-        self.ow.patch(f"/api/trials/{t.id}", {"days": [1, 1, 1]}, format="json")
+        self.finish_trial(t.id)
         self.assertIn("Convert", self.issue(self.ow, self.ravi, 2, "CVC").data["error"])
         r = self.ow.post("/api/cvc", {"customer": self.ravi, "start_date": timezone.localdate().isoformat()}, format="json")
         self.assertEqual(r.status_code, 201)
@@ -121,7 +128,7 @@ class FlowTests(FlowBase):
         r = self.ow.post("/api/cvc", {"customer": self.ravi, "start_date": timezone.localdate().isoformat()}, format="json")
         self.assertEqual(r.status_code, 400)
         t = self.ow.post("/api/trials", {"customer": self.ravi}, format="json").data
-        self.ow.patch(f"/api/trials/{t['id']}", {"days": [1, 1, 1]}, format="json")
+        self.finish_trial(t["id"])
         old = (timezone.localdate() - timedelta(days=8)).isoformat()
         future = (timezone.localdate() + timedelta(days=1)).isoformat()
         self.assertIn("7 days", self.ow.post("/api/cvc", {"customer": self.ravi, "start_date": old}, format="json").data["error"])
@@ -174,9 +181,8 @@ class FlowTests(FlowBase):
         cid = self.customer(self.sp, "Kumar", "9912244556", self.coach)
         t = self.sp.post("/api/trials", {"customer": cid}, format="json").data
         t2 = self.ow.post("/api/trials", {"customer": self.ravi}, format="json").data
-        self.assertEqual(self.ow.patch(f"/api/trials/{t['id']}", {"days": [1, 0, 0]}, format="json").status_code, 200)   # owner edits supervisor's
-        self.assertEqual(self.sp.patch(f"/api/trials/{t2['id']}", {"days": [1, 0, 0]}, format="json").status_code, 403)  # supervisor can't edit owner's
-        self.assertEqual(self.sp.patch(f"/api/trials/{t['id']}", {"days": [1, 1, 0]}, format="json").status_code, 200)
+        self.assertEqual(self.ow.patch(f"/api/trials/{t['id']}", {"mark": 1}, format="json").status_code, 200)   # owner edits supervisor's
+        self.assertEqual(self.sp.patch(f"/api/trials/{t2['id']}", {"mark": 1}, format="json").status_code, 403)  # supervisor can't edit owner's
 
     def test_club_isolation_and_supervisor_no_dashboard(self):
         owb = self.as_(self.owner_b)
@@ -189,7 +195,8 @@ class FlowTests(FlowBase):
         self.assertIn("clubs", self.ad.get("/api/dashboard").data)
 
     def test_disabled_club_blocks_login_and_writes(self):
-        self.ad.post(f"/api/clubs/{self.a.id}/toggle")
+        self.assertIn("can't be disabled", self.ad.post(f"/api/clubs/{self.a.id}/toggle").data["error"])
+        Club.objects.filter(pk=self.a.id).update(is_active=False)        # an old club disabled before this rule
         self.assertEqual(APIClient().post("/api/auth/login", {"username": "owner", "password": "Strong#Pass1"}, format="json").status_code, 403)
         r = self.ad.post("/api/customers", {"club": self.a.id, "name": "X", "mobile": "9999999999"}, format="json")
         self.assertEqual(r.status_code, 403)
@@ -249,8 +256,12 @@ class V2Tests(FlowBase):
 
     def test_trial_days_in_order_and_weekly_rules(self):
         t = self.ow.post("/api/trials", {"customer": self.ravi}, format="json").data
-        self.assertIn("in order", self.ow.patch(f"/api/trials/{t['id']}", {"days": [0, 1, 0]}, format="json").data["error"])
-        self.ow.patch(f"/api/trials/{t['id']}", {"days": [1, 1, 1]}, format="json")
+        self.assertIn("Mark Day 1", self.ow.patch(f"/api/trials/{t['id']}", {"mark": 2}, format="json").data["error"])
+        self.assertEqual(self.ow.patch(f"/api/trials/{t['id']}", {"mark": 1}, format="json").data["days"], [True, False, False])
+        self.assertIn("tomorrow", self.ow.patch(f"/api/trials/{t['id']}", {"mark": 2}, format="json").data["error"])
+        self.assertIn("Reason", self.ow.patch(f"/api/trials/{t['id']}", {"undo": 1}, format="json").data["error"])
+        self.assertEqual(self.ow.patch(f"/api/trials/{t['id']}", {"undo": 1, "reason": "wrong person"}, format="json").data["days"], [False, False, False])
+        self.finish_trial(t["id"])
         self.ow.post("/api/cvc", {"customer": self.ravi, "start_date": timezone.localdate().isoformat()}, format="json")
         bad = self.ow.post("/api/weekly", {"customer": self.ravi, "weight": 900}, format="json")
         self.assertIn("between", bad.data["error"])
@@ -269,13 +280,14 @@ class V2Tests(FlowBase):
     def test_super_admin_as_owner(self):
         c = APIClient()
         self.assertEqual(c.post("/api/auth/login", {"username": "giri", "password": "Strong#Pass1", "portal": "club"}, format="json").status_code, 409)
-        self.ad.patch(f"/api/clubs/{self.a.id}", {"admin_owner": self.admin.id}, format="json")
+        self.assertIn("Change the Club Owner", self.ad.patch(f"/api/clubs/{self.a.id}", {"admin_owner": self.admin.id}, format="json").data["error"])
+        new = self.ad.post("/api/clubs", {"name": "Giri's Club", "city": "Kadapa", "owner": {"mode": "me"}}, format="json").data
+        self.assertIsNone(new["login"])
         cache.clear()
         r = c.post("/api/auth/login", {"username": "giri", "password": "Strong#Pass1", "portal": "club"}, format="json")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["user"]["owned_clubs"][0]["id"], self.a.id)
-        ad = self.as_(self.admin)          # logging in again ends the earlier session
-        self.assertIn("Super Admin", ad.patch(f"/api/clubs/{self.a.id}", {"admin_owner": self.owner.id}, format="json").data["error"])
+        self.assertEqual(r.data["user"]["owned_clubs"][0]["id"], new["id"])
+        self.assertTrue(Coach.objects.filter(club_id=new["id"], is_head=True, user=self.admin).exists())
 
     def test_take_back_unused(self):
         self.issue(self.ow, self.ravi, 1)
@@ -349,6 +361,48 @@ class V3Tests(FlowBase):
         rows = self.ad.get("/api/users").data
         self.assertTrue(any(u["role"] == "ADMIN" and not u["is_active"] for u in rows))
         self.assertEqual(self.ow.get("/api/users").status_code, 403)
+
+
+class V4Tests(FlowBase):
+    def test_club_with_new_owner_in_one_step_and_head_coach(self):
+        up = {"upline_name": "Giri", "upline_mobile": "9676011011", "upline_herbalife_id": "W1"}
+        r = self.ad.post("/api/clubs", {"name": "Tirupati Club", "city": "Tirupati", "owner": {"mode": "new", "first_name": "Jack", "mobile": "9555512345",
+                                                                                                 "herbalife_id": "W55", **up}}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertTrue(r.data["login"]["password"])
+        cid = r.data["id"]
+        head = Coach.objects.get(club_id=cid, is_head=True)
+        self.assertEqual((head.name, head.mobile), ("Jack", "9555512345"))
+        self.assertIn("Choose who runs", self.ad.post("/api/clubs", {"name": "X Club"}, format="json").data["error"])
+        self.assertFalse(Club.objects.filter(name="X Club").exists())
+        # a customer with no coach picked goes to the Head coach
+        ju = User.objects.get(mobile="9555512345")
+        ju.set_password("Strong#Pass1"); ju.must_change_password = False; ju.save()
+        jack = self.as_(ju)
+        c = jack.post("/api/customers", {"name": "Cust", "mobile": "9666615223"}, format="json").data
+        self.assertEqual(c["coach_name"], "Jack")
+        self.assertIn("Head coach", jack.patch(f"/api/coaches/{head.id}", {"name": "X"}, format="json").data["error"])
+        # change club owner: the new owner becomes Head coach
+        r = self.ad.post("/api/users", {"role": "OWNER", "club": cid, "replace": True, "first_name": "Mary", "mobile": "9555512346", "herbalife_id": "W56", **up}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(Coach.objects.get(club_id=cid, is_head=True, is_active=True).name, "Mary")
+        self.assertFalse(User.objects.get(mobile="9555512345").is_active)
+
+    def test_external_referral_gets_complimentary_visits(self):
+        r = self.ow.post("/api/customers", {"name": "Neha", "mobile": "9440011122", "source": "EXTERNAL", "referrer_name": "Sunita (another club)", "day1": True}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["visit"]["coupon"], "Complimentary")
+        self.assertTrue(r.data["visit"]["days"])
+        vid = r.data["visit"]["id"]
+        self.assertIn("tomorrow", self.ow.post("/api/redemptions", {"visit": vid, "day": 2}, format="json").data["error"])
+        Redemption.objects.filter(visit_id=vid).update(created_at=timezone.now() - timedelta(days=1))
+        self.assertEqual(self.ow.post("/api/redemptions", {"visit": vid, "day": 2}, format="json").status_code, 201)
+        self.assertIn("Name of the person", self.ow.post("/api/customers", {"name": "Z", "mobile": "9440011199", "source": "EXTERNAL"}, format="json").data["error"])
+        refs = self.ow.get("/api/list/referrals").data
+        self.assertTrue(any(x["coupon"] == "Complimentary" for x in refs["results"]))
+        self.assertEqual(self.ow.get("/api/list/customers?source=EXTERNAL").data["total"], 1)
+        nxt = self.ow.get("/api/desk/next").data
+        self.assertEqual(nxt["number"], 1)
 
 
 class AccountTests(Base):

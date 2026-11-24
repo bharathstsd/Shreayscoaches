@@ -9,6 +9,7 @@ export function Clubs({ ctx }) {
   const { data, error, reload } = useLoad("clubs");
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
+  const [login, setLogin] = useState(null);
   if (error) return <p className="err">{error}</p>;
   if (!data) return <Loading />;
   const list = data.filter((c) => !q || (c.name + c.city + (c.owner || "") + (c.supervisor || "")).toLowerCase().includes(q.toLowerCase()));
@@ -23,37 +24,71 @@ export function Clubs({ ctx }) {
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span style={{ width: 42, height: 42, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", font: "600 18px var(--display)", ...(c.is_active ? { background: "var(--mint)", color: "var(--emerald)" } : { background: "#F0DEDC", color: "#7A2723" }) }}>{c.name.charAt(0)}</span>
               <span style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 600 }}>{c.name}</b><br /><span className="muted">{c.city}</span></span>
-              <span className={"tag" + (c.is_active ? "" : " red")}>{c.is_active ? "Active" : "Disabled"}</span>
+              {!c.is_active && <span className="tag red">Disabled</span>}
             </div>
-            <Kv k="Club Owner" v={c.admin_owner ? (c.admin_owner_name + " (Super Admin)") : (c.owner || "Not created")} />{c.supervisor && <Kv k="Supervisor" v={c.supervisor} />}<Kv k="Coaches" v={c.coaches} /><Kv k="Coupons in stock" v={c.stock} />
+            <Kv k="Club Owner · Head coach" v={c.admin_owner ? (c.admin_owner_name + " (Super Admin)") : (c.owner || "Not set")} /><Kv k="Coaches" v={c.coaches} /><Kv k="Coupons in stock" v={c.stock} />
           </button>
         ))}
       </div>
       {list.length === 0 && <Empty>{data.length ? "No club matches your search." : "No clubs yet. Add your first club."}</Empty>}
-      <p className="muted">Disabled clubs always sit at the end of the list.</p>
-      {adding && <ClubForm onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload(); ctx.refreshClubs(); }} />}
+      {adding && <ClubForm onClose={() => setAdding(false)} onSaved={(r) => { setAdding(false); reload(); ctx.refreshClubs(); api("auth/me").then(ctx.setUser).catch(() => {}); if (r.login) setLogin(r.login); }} />}
+      {login && <LoginCreated login={login} onClose={() => setLogin(null)} />}
     </>
   );
 }
 
 function ClubForm({ club, onClose, onSaved }) {
-  const [f, setF] = useState(club || { name: "", city: "", state: "Andhra Pradesh", address: "", pincode: "", owner_name: "", owner_mobile: "" });
+  const isNew = !club;
+  const [f, setF] = useState(club ? { name: club.name, city: club.city || "", address: club.address || "", pincode: club.pincode || "" } : { name: "", city: "", address: "", pincode: "" });
+  const [mode, setMode] = useState("new");
+  const [o, setO] = useState({ first_name: "", last_name: "", mobile: "", herbalife_id: "", username: "", upline_name: "", upline_mobile: "", upline_herbalife_id: "" });
   const [run, busy] = useAction();
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const seto = (k) => (e) => setO({ ...o, [k]: e.target.value });
   async function save(e) {
     e.preventDefault();
-    const r = await run(() => api(club ? `clubs/${club.id}` : "clubs", { method: club ? "PATCH" : "POST", body: f }), club ? "Club details saved." : "Club created.");
+    const body = isNew ? { ...f, owner: mode === "me" ? { mode } : { mode, ...o } } : f;
+    const r = await run(() => api(isNew ? "clubs" : `clubs/${club.id}`, { method: isNew ? "POST" : "PATCH", body }), isNew ? "Club created." : "Club details saved.");
     if (r) onSaved(r);
   }
   return (
-    <Sheet title={club ? "Edit club" : "New club"} onClose={onClose}>
-      <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <Sheet title={isNew ? "New club" : `Edit ${club.name}`} onClose={onClose}>
+      <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "74vh", overflowY: "auto" }}>
+        <p className="lbl">Club</p>
         <Field label="Club name" id="cn" value={f.name} onChange={set("name")} required />
         <div className="btns"><Field label="City" id="cc" value={f.city} onChange={set("city")} /><Field label="Pincode" id="cp" value={f.pincode} onChange={set("pincode")} inputMode="numeric" /></div>
         <Field label="Address / landmark" id="ca" value={f.address} onChange={set("address")} />
-        <div className="btns"><Field label="Owner name" id="con" value={f.owner_name} onChange={set("owner_name")} /><Field label="Owner mobile" id="com" value={f.owner_mobile} onChange={set("owner_mobile")} inputMode="numeric" /></div>
-        <div className="btns"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy}>Save</button></div>
+        {isNew && <>
+          <p className="lbl" style={{ marginTop: 6 }}>Who runs it?</p>
+          <div className="pick">
+            <button type="button" className={mode === "new" ? "on" : ""} onClick={() => setMode("new")}><span className="t"><b>A Club Owner</b><i>Creates their login now. They are also the club's Head coach.</i></span></button>
+            <button type="button" className={mode === "me" ? "on" : ""} onClick={() => setMode("me")}><span className="t"><b>I run it myself</b><i>Use your Super Admin login. You become the Head coach.</i></span></button>
+          </div>
+          {mode === "new" && <>
+            <div className="btns"><Field label="Owner's first name" id="of" value={o.first_name} onChange={seto("first_name")} required /><Field label="Last name" id="ol" value={o.last_name} onChange={seto("last_name")} /></div>
+            <div className="btns"><Field label="Mobile (10 digits)" id="om" value={o.mobile} onChange={seto("mobile")} inputMode="numeric" required /><Field label="Herbalife ID" id="oh" value={o.herbalife_id} onChange={seto("herbalife_id")} required /></div>
+            <Field label="Username (optional: the Herbalife ID is used)" id="ou" value={o.username} onChange={seto("username")} autoCapitalize="none" />
+            <p className="lbl" style={{ marginTop: 4 }}>Owner's upline / sponsor</p>
+            <Field label="Name" id="oun" value={o.upline_name} onChange={seto("upline_name")} required />
+            <div className="btns"><Field label="Mobile" id="oum" value={o.upline_mobile} onChange={seto("upline_mobile")} inputMode="numeric" required /><Field label="Herbalife ID" id="ouh" value={o.upline_herbalife_id} onChange={seto("upline_herbalife_id")} required /></div>
+          </>}
+        </>}
+        <div className="btns"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy}>{isNew ? "Create club" : "Save"}</button></div>
       </form>
+    </Sheet>
+  );
+}
+
+function LoginCreated({ login, onClose }) {
+  const toast = useToast();
+  return (
+    <Sheet title={`Login for ${login.user.name}`} onClose={onClose}>
+      <p className="muted">Shown only now. They set their own password at first login.</p>
+      <div className="pwd">{login.password}</div>
+      <div className="msg">{login.message}</div>
+      <div className="btns"><button className="btn ghost" onClick={() => copyText(login.password, toast)}>Copy password</button><button className="btn" onClick={() => copyText(login.message, toast)}>Copy WhatsApp message</button></div>
+      <a className="btn gold" style={{ textDecoration: "none" }} href={`https://wa.me/91${login.user.mobile}?text=${encodeURIComponent(login.message)}`} target="_blank" rel="noopener">Send on WhatsApp</a>
+      <button className="linkbtn" onClick={onClose}>Done</button>
     </Sheet>
   );
 }
@@ -94,12 +129,12 @@ export function ClubDetail({ ctx, arg }) {
 
   return (
     <>
-      {!c.is_active && <div className="banner bad">This club is disabled. Its Owner and Supervisor can't log in and no new entries are allowed. History stays visible to you, read-only.</div>}
+      {!c.is_active && <div className="banner bad">This club was disabled earlier. Clubs can't be disabled any more, so enable it below.</div>}
       <div className="split">
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><p className="h2">{c.name}</p><button className="chip" onClick={() => setEditing(true)}>Edit</button></div>
           <p className="muted">{[c.address, c.city, c.state, c.pincode].filter(Boolean).join(", ")}</p>
-          <Kv k="Owner (contact)" v={c.owner_name || "—"} /><Kv k="Wellness coaches" v={c.coaches} /><Kv k="Coupons in stock" v={c.stock} />
+          <Kv k="Wellness coaches" v={c.coaches} /><Kv k="Coupons in stock" v={c.stock} />
           <p className="lbl" style={{ marginTop: 6 }}>Coupon ranges given to this club</p>
           {c.allocations.length ? c.allocations.map((a, i) => <Kv key={i} k={a.batch} v={`#${a.start} – #${a.end}`} />) : <p className="muted">None yet.</p>}
         </div>
@@ -109,39 +144,25 @@ export function ClubDetail({ ctx, arg }) {
             <div className="kpi"><b>{c.trials}</b><span>Trials</span></div><div className="kpi"><b>{c.cvc}</b><span>CVC</span></div>
           </div>
           <div className="card">
-            <p className="lbl">Work in this club</p>
-            <button className="btn" disabled={!c.is_active} onClick={() => ctx.switchWs(String(c.id))}>Open {c.name} workspace</button>
-            {c.admin_owner === ctx.user.id
-              ? <div className="row" style={{ cursor: "default" }}><span className="grow"><b>You run this club</b><span className="muted">It appears under "My club" in the header, and the Club Owner login takes you straight here.</span></span><button className="chip" disabled={busy} onClick={() => runIt(false)}>Stop</button></div>
-              : !roles.OWNER && <button className="row" disabled={busy || !c.is_active} onClick={() => runIt(true)}><span className="grow"><b>I run this club</b><span className="muted">Be this club's Owner with your Super Admin login. No second account needed.</span></span></button>}
+            <p className="lbl">Club Owner · Head coach</p>
+            {c.admin_owner ? (
+              <div className="row" style={{ cursor: "default" }}><span className="grow"><b>{c.admin_owner_name}{c.admin_owner === ctx.user.id ? " (you)" : ""}</b><span className="muted">Super Admin running this club. Also its Head coach.</span></span></div>
+            ) : roles.OWNER ? (
+              <div className="row" style={{ cursor: "default" }}>
+                <span className="grow"><b>{roles.OWNER.name}</b><span className="muted">{roles.OWNER.username} · {roles.OWNER.mobile}{roles.OWNER.herbalife_id ? " · " + roles.OWNER.herbalife_id : ""}{roles.OWNER.upline_name ? " · upline " + roles.OWNER.upline_name : ""}</span></span>
+                <button className="chip" onClick={() => resetPw(roles.OWNER)} disabled={busy}>Reset password</button>
+              </div>
+            ) : <p className="muted">No Club Owner yet.</p>}
+            <button className="btn ghost" onClick={() => setStaffForm("OWNER")}>{c.admin_owner || roles.OWNER ? "Change Club Owner" : "Set the Club Owner"}</button>
+            {roles.SUPERVISOR && <div className="row" style={{ cursor: "default" }}><span className="grow"><b>{roles.SUPERVISOR.name}</b><span className="muted">Supervisor (older login)</span></span><button className="chip" onClick={() => removeStaff(roles.SUPERVISOR)} disabled={busy}>Remove</button></div>}
           </div>
-          <div className="card">
-            <p className="lbl">Staff logins</p>
-            <p className="muted">One Club Owner login per club. Username, mobile and Herbalife ID must be unique.</p>
-            {[...(c.admin_owner && !roles.OWNER ? [] : ["OWNER"]), ...(roles.SUPERVISOR ? ["SUPERVISOR"] : [])].map((role) => {
-              const s = roles[role];
-              return s ? (
-                <div key={role} className="row" style={{ cursor: "default" }}>
-                  <span className="grow"><b>{s.name}</b><span className="muted">{role === "OWNER" ? "Club Owner" : "Supervisor"} · {s.username} · {s.mobile}{s.herbalife_id ? " · " + s.herbalife_id : ""}{s.upline_name ? " · upline " + s.upline_name : ""}</span></span>
-                  <button className="chip" onClick={() => resetPw(s)} disabled={busy || !c.is_active}>Reset password</button>
-                  <button className="chip" onClick={() => (role === "OWNER" ? setRemoving(s) : removeStaff(s))} disabled={busy}>Remove</button>
-                </div>
-              ) : (
-                <button key={role} className="row" disabled={!c.is_active} onClick={() => setStaffForm(role)}><span className="grow"><b>+ Add {role === "OWNER" ? "Club Owner" : "Supervisor"}</b><span className="muted">{c.is_active ? "Creates a login with a temporary password" : "Enable the club first"}</span></span></button>
-              );
-            })}
-            <p className="muted">Removing an account that has entries deactivates it instead, so history keeps its name.</p>
-          </div>
-          {!confirm ? (
-            <button className={"btn" + (c.is_active ? " danger" : "")} style={{ width: "100%" }} onClick={() => (c.is_active ? setConfirm(true) : toggle())}>{c.is_active ? "Disable this club" : "Enable this club"}</button>
-          ) : (
-            <div className="card"><p style={{ margin: 0 }}>Disable <b>{c.name}</b>? Its staff are logged out at once and can't enter data until you enable it again.</p>
-              <div className="btns"><button className="btn ghost" onClick={() => setConfirm(false)}>Cancel</button><button className="btn danger" onClick={toggle} disabled={busy}>Disable club</button></div></div>
-          )}
+          <button className="btn" onClick={() => ctx.switchWs(String(c.id))}>Open {c.name} workspace</button>
+          {!c.is_active && <button className="btn" onClick={toggle} disabled={busy}>Enable this club</button>}
         </div>
       </div>
       {editing && <ClubForm club={c} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); reload(); ctx.refreshClubs(); }} />}
-      {staffForm && <StaffForm club={c} role={staffForm} onClose={() => setStaffForm(null)} onSaved={(r) => { setStaffForm(null); setNewPw(r); reload(); ctx.refreshClubs(); }} />}
+      {staffForm && <StaffForm ctx={ctx} club={c} replace={!!(c.admin_owner || roles.OWNER)} onClose={() => setStaffForm(null)}
+        onSaved={(r) => { setStaffForm(null); reload(); ctx.refreshClubs(); api("auth/me").then(ctx.setUser).catch(() => {}); if (r && r.password) setNewPw(r); }} />}
       {removing && (
         <Sheet title={`Remove ${removing.name}?`} onClose={() => setRemoving(null)}>
           <p style={{ margin: 0 }}>{c.name} will have no Club Owner login until you add a new one. Nobody but you can then record coupons or visits there.</p>
@@ -157,39 +178,48 @@ export function ClubDetail({ ctx, arg }) {
           <button className="linkbtn" onClick={() => setResetPwd(null)}>Done</button>
         </Sheet>
       )}
-      {newPw && (
-        <Sheet title="Login created" onClose={() => setNewPw(null)}>
-          <p className="muted">Share this once. {newPw.user.name} must change it at first login. It expires in 24 hours.</p>
-          <div className="msg">{`Hello ${newPw.user.name},\nYour login for the Shreyas Wellness World Coupon System:\nUsername: ${newPw.user.username}\nTemporary Password: ${newPw.password}\nPlease log in and set your own password.`}</div>
-          <div className="btns"><button className="btn ghost" onClick={() => copyText(newPw.password, toast)}>Copy password</button>
-            <button className="btn" onClick={() => copyText(`Hello ${newPw.user.name},\nYour login for the Shreyas Wellness World Coupon System:\nUsername: ${newPw.user.username}\nTemporary Password: ${newPw.password}\nPlease log in and set your own password.`, toast)}>Copy WhatsApp message</button></div>
-          <button className="linkbtn" onClick={() => setNewPw(null)}>Done</button>
-        </Sheet>
-      )}
+      {newPw && <LoginCreated login={newPw} onClose={() => setNewPw(null)} />}
     </>
   );
 }
 
-function StaffForm({ club, role, onClose, onSaved }) {
+function StaffForm({ ctx, club, replace, onClose, onSaved }) {
+  const [mode, setMode] = useState("new");
   const [f, setF] = useState({ first_name: "", last_name: "", username: "", mobile: "", herbalife_id: "", upline_name: "", upline_mobile: "", upline_herbalife_id: "" });
-  const owner = role === "OWNER";
   const [run, busy] = useAction();
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   async function save(e) {
     e.preventDefault();
-    const r = await run(() => api("users", { method: "POST", body: { ...f, role, club: club.id } }));
+    let r;
+    if (mode === "me") {
+      if (replace && club.staff.some((s) => s.role === "OWNER" && s.is_active)) {
+        const cur = club.staff.find((s) => s.role === "OWNER" && s.is_active);
+        r = await run(() => api(`users/${cur.id}`, { method: "PATCH", body: { is_active: false } }));
+        if (!r) return;
+      }
+      r = await run(() => api(`clubs/${club.id}`, { method: "PATCH", body: { admin_owner: ctx.user.id } }), `You now run ${club.name}.`);
+    } else {
+      r = await run(() => api("users", { method: "POST", body: { ...f, role: "OWNER", club: club.id, replace } }), "Club Owner changed.");
+    }
     if (r) onSaved(r);
   }
   return (
-    <Sheet title={`New ${role === "OWNER" ? "Club Owner" : "Supervisor"} · ${club.name}`} onClose={onClose}>
-      <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div className="btns"><Field label="First name" id="sf" value={f.first_name} onChange={set("first_name")} required /><Field label="Last name" id="sl" value={f.last_name} onChange={set("last_name")} /></div>
-        <div className="btns"><Field label="Mobile (10 digits)" id="sm" value={f.mobile} onChange={set("mobile")} inputMode="numeric" required /><Field label="Herbalife ID" id="sh" value={f.herbalife_id} onChange={set("herbalife_id")} required /></div>
-        <Field label="Username (optional, the Herbalife ID is used if empty)" id="su" value={f.username} onChange={set("username")} autoCapitalize="none" />
-        <p className="lbl" style={{ marginTop: 4 }}>Upline / sponsor{owner ? "" : " (optional)"}</p>
-        <Field label="Upline name" id="un" value={f.upline_name} onChange={set("upline_name")} required={owner} />
-        <div className="btns"><Field label="Upline mobile" id="um" value={f.upline_mobile} onChange={set("upline_mobile")} inputMode="numeric" required={owner} /><Field label="Upline Herbalife ID" id="uh" value={f.upline_herbalife_id} onChange={set("upline_herbalife_id")} required={owner} /></div>
-        <div className="btns"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy}>Create login</button></div>
+    <Sheet title={`${replace ? "Change" : "Set"} the Club Owner · ${club.name}`} onClose={onClose}>
+      <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "74vh", overflowY: "auto" }}>
+        {replace && <div className="banner warn" style={{ cursor: "default" }}>The current Owner's login stops working. Everything they recorded stays.</div>}
+        <div className="pick">
+          <button type="button" className={mode === "new" ? "on" : ""} onClick={() => setMode("new")}><span className="t"><b>A new Club Owner</b><i>Creates their login with a temporary password</i></span></button>
+          {club.admin_owner !== ctx.user.id && <button type="button" className={mode === "me" ? "on" : ""} onClick={() => setMode("me")}><span className="t"><b>I'll run it myself</b><i>With your Super Admin login</i></span></button>}
+        </div>
+        {mode === "new" && <>
+          <div className="btns"><Field label="First name" id="sf" value={f.first_name} onChange={set("first_name")} required /><Field label="Last name" id="sl" value={f.last_name} onChange={set("last_name")} /></div>
+          <div className="btns"><Field label="Mobile (10 digits)" id="sm" value={f.mobile} onChange={set("mobile")} inputMode="numeric" required /><Field label="Herbalife ID" id="sh" value={f.herbalife_id} onChange={set("herbalife_id")} required /></div>
+          <Field label="Username (optional: the Herbalife ID is used)" id="su" value={f.username} onChange={set("username")} autoCapitalize="none" />
+          <p className="lbl" style={{ marginTop: 4 }}>Upline / sponsor</p>
+          <Field label="Name" id="un" value={f.upline_name} onChange={set("upline_name")} required />
+          <div className="btns"><Field label="Mobile" id="um" value={f.upline_mobile} onChange={set("upline_mobile")} inputMode="numeric" required /><Field label="Herbalife ID" id="uh" value={f.upline_herbalife_id} onChange={set("upline_herbalife_id")} required /></div>
+        </>}
+        <div className="btns"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy}>Save</button></div>
       </form>
     </Sheet>
   );

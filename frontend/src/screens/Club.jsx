@@ -16,9 +16,8 @@ export function Launch({ ctx }) {
 
 export function More({ ctx }) {
   const items = ctx.inClub ? [
-    ["trial", "trials", "3-day trials", "Attendance for each day"], ["star", "cvc", "CVC membership", "Convert trial finishers"],
-    ["award", "weekly", "Weekly results & awards", "Check-ups and Best Results"],
-    ["coach", "coaches", "Wellness coaches", ctx.role === "SUPERVISOR" ? "View only" : "Add, edit and rank coaches"],
+    ["desk", "desk", "Coupon desk", "Issue, friend's visit, Day 1 and Day 2"],
+    ["coach", "coaches", "Wellness coaches", "Head coach and coaches"],
     ...(ctx.role !== "SUPERVISOR" ? [["tree", "tree", "Referral trees", "Who referred whom"]] : []),
     ["key", "password", "Change my password", "For your own account only"],
   ] : [
@@ -38,48 +37,97 @@ export function More({ ctx }) {
   );
 }
 
+export function ProgramTabs({ ctx, current }) {
+  return (
+    <div className="chips scroll" role="tablist" aria-label="Programs">
+      {[["trials", "3-day trials"], ["cvc", "CVC membership"], ["weekly", "Weekly results"]].map(([k, l]) => (
+        <button key={k} role="tab" aria-selected={current === k} className={"chip" + (current === k ? " on" : "")} onClick={() => ctx.go(k)}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
+// One trial: dated day chips, one "Mark Day N" button, undo only for today's mark.
+export function TrialCard({ ctx, t, onChange, bare }) {
+  const [run, busy] = useAction();
+  const [undo, setUndo] = useState(false);
+  const [reason, setReason] = useState("");
+  const canFix = ctx.isAdmin || ctx.role === "OWNER";
+  const mine = canFix || t.created_by === ctx.user.id;
+  async function mark() {
+    const r = await run(() => api(`trials/${t.id}`, { method: "PATCH", club: ctx.club, body: { mark: t.next_day } }),
+      (x) => (x.days.every(Boolean) ? `${t.customer_name} completed the 3-day trial.` : `Day ${t.next_day} marked for ${t.customer_name}.`));
+    if (r) onChange();
+  }
+  async function doUndo() {
+    const r = await run(() => api(`trials/${t.id}`, { method: "PATCH", club: ctx.club, body: { undo: t.undo_day, reason } }), `Day ${t.undo_day} unmarked.`);
+    if (r) { setUndo(false); setReason(""); onChange(); }
+  }
+  const body = (
+    <>
+      {!bare && <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+        <button className="linkbtn" style={{ padding: 0, fontWeight: 600, textDecoration: "none", color: "var(--ink)" }} onClick={() => ctx.go("customer", t.customer)}>{t.customer_name}</button>
+        <span className={"pill " + t.tone}>{t.label}</span></div>}
+      {bare && <div className="rowflex"><b style={{ fontSize: 17 }}>3-day trial</b><span className={"pill " + t.tone}>{t.label}</span></div>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+        {t.days.map((x, i) => (
+          <div key={i} className={"tday" + (x ? " on" : t.next_day === i + 1 ? " next" : "")}><b>Day {i + 1}</b><span>{x ? fmtDate(t.days_at[i]) || "Done" : t.next_day === i + 1 ? (t.can_mark ? "Today" : "Tomorrow") : "—"}</span></div>
+        ))}
+      </div>
+      {t.member ? null : t.next_day ? (
+        <button className="btn" disabled={!t.can_mark || !mine || busy} onClick={mark}>{t.can_mark ? `Mark Day ${t.next_day} attended` : `Day ${t.next_day} can be marked tomorrow`}</button>
+      ) : (
+        <button className="btn gold" onClick={() => ctx.go("cvc", t.customer)}>Convert to CVC</button>
+      )}
+      {t.undo_day && canFix && !undo && <button className="linkbtn" style={{ alignSelf: "flex-start" }} onClick={() => setUndo(true)}>Undo today's Day {t.undo_day} (marked by mistake)</button>}
+      {undo && <>
+        <Field label="Why undo it?" id={"ur" + t.id} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. marked the wrong person" />
+        <div className="btns"><button className="btn ghost" onClick={() => setUndo(false)}>Cancel</button><button className="btn danger" disabled={!reason.trim() || busy} onClick={doUndo}>Undo Day {t.undo_day}</button></div>
+      </>}
+    </>
+  );
+  return bare ? body : <div className="card">{body}</div>;
+}
+
 export function Trials({ ctx }) {
   const { data, error, reload } = useLoad("trials", { club: ctx.club });
   const custs = useLoad("customers?limit=500", { club: ctx.club });
   const [run, busy] = useAction();
   const [starting, setStarting] = useState(false);
   const [q, setQ] = useState("");
+  const [tab, setTab] = useState("active");
   if (error) return <p className="err">{error}</p>;
   if (!data) return <Loading />;
-  const mine = (t) => ctx.isAdmin || ctx.role === "OWNER" || t.created_by === ctx.user.id;
-  async function toggle(t, i) {
-    const days = t.days.slice(); days[i] = !days[i];
-    const r = await run(() => api(`trials/${t.id}`, { method: "PATCH", club: ctx.club, body: { days } }), (x) => x.status === "COMPLETED" ? `${t.customer_name} completed the 3-day trial.` : null);
-    if (r) reload();
-  }
   async function start(c) {
     const r = await run(() => api("trials", { method: "POST", club: ctx.club, body: { club: ctx.club, customer: c.id } }), `3-day trial started for ${c.name}.`);
     if (r) { setStarting(false); reload(); custs.reload(); }
   }
-  const eligible = (custs.data || []).filter((c) => c.stage === "New" && (!q || (c.name + c.mobile).toLowerCase().includes(q.toLowerCase())));
+  const groups = {
+    active: data.filter((t) => !t.member && !t.days.every(Boolean)),
+    done: data.filter((t) => !t.member && t.days.every(Boolean)),
+    cvc: data.filter((t) => t.member),
+  };
+  const list = tab === "all" ? data : groups[tab];
+  const eligible = (custs.data || []).filter((c) => ["New", "Visitor"].includes(c.stage) && (!q || (c.name + c.mobile).toLowerCase().includes(q.toLowerCase())));
   return (
     <>
+      <ProgramTabs ctx={ctx} current="trials" />
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <p className="muted" style={{ maxWidth: "60ch" }}>One 3-day trial per person, ever, across all clubs. Tap a day to mark attendance.</p>
-        <button className="btn" onClick={() => setStarting(true)}>+ Start a trial</button>
+        <p className="muted" style={{ maxWidth: "62ch", margin: 0 }}>One trial per mobile number. Mark each day when they attend: in order, one day per date. After Day 3 the trial is complete and they can join CVC.</p>
+        <button className="btn" style={{ width: "auto" }} onClick={() => setStarting(true)}>+ Start a trial</button>
       </div>
-      {data.length === 0 && <Empty>No trials yet.</Empty>}
-      <div className="kpis" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
-        {data.map((t) => (
-          <div key={t.id} className="card">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{t.customer_name}</b><span className={"tag " + (t.status === "COMPLETED" ? "" : "gold")}>{t.status === "COMPLETED" ? "Completed" : t.status === "IN_PROGRESS" ? "In progress" : "Registered"}</span></div>
-            <p className="muted">Started {fmtDate(t.start_date)}</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
-              {t.days.map((x, i) => <button key={i} className={"chip" + (x ? " on" : "")} disabled={!mine(t) || busy} onClick={() => toggle(t, i)}>Day {i + 1}{x ? " ✓" : ""}</button>)}
-            </div>
-          </div>
-        ))}
+      <div className="fchips">
+        {[["active", "In progress"], ["done", "Ready for CVC"], ["cvc", "Joined CVC"], ["all", "All"]].map(([k, l]) => <button key={k} className={"chip" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>{l}<span className="n">{k === "all" ? data.length : groups[k].length}</span></button>)}
+      </div>
+      {list.length === 0 && <Empty>{tab === "active" ? "No trials in progress." : "Nothing here yet."}</Empty>}
+      <div className="kpis" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(290px,1fr))" }}>
+        {list.map((t) => <TrialCard key={t.id} ctx={ctx} t={t} onChange={reload} />)}
       </div>
       {starting && (
         <Sheet title="Start a 3-day trial" onClose={() => setStarting(false)}>
           <input className="inp" placeholder="Search name or mobile" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search customer" />
           <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "50vh", overflowY: "auto" }}>
-            {eligible.length === 0 && <p className="muted">No customers without a trial. New customers appear here.</p>}
+            {eligible.length === 0 && <p className="muted">No customers without a trial. Add the customer first.</p>}
             {eligible.map((c) => <button key={c.id} className="row" disabled={busy} onClick={() => start(c)}><span className="grow"><b>{c.name}</b><span className="muted">{c.mobile}</span></span><span className="tag">Start</span></button>)}
           </div>
         </Sheet>
@@ -104,6 +152,7 @@ export function Cvc({ ctx, arg }) {
   }
   return (
     <>
+      <ProgramTabs ctx={ctx} current="cvc" />
       <p className="muted" style={{ maxWidth: "62ch" }}>Only customers who attended all 3 trial days can join CVC. The start date must be today or within the last 7 days.</p>
       <div className="split">
         <div className="card">
@@ -148,6 +197,7 @@ export function Weekly({ ctx }) {
   const canApprove = ctx.isAdmin || ctx.role === "OWNER";
   return (
     <>
+      <ProgramTabs ctx={ctx} current="weekly" />
       <p className="muted">Weekly checkups are for CVC members. An approved Best Results award earns a coupon.</p>
       <div className="split">
         <div className="card">
