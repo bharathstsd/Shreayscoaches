@@ -43,14 +43,16 @@ export function Customers({ ctx }) {
 export function CustomerForm({ ctx, customer, onClose, onSaved, title }) {
   const coaches = useCoaches(ctx);
   const [f, setF] = useState(customer ? { name: customer.name, mobile: customer.mobile, coach: customer.coach || "", gender: customer.gender || "", dob: customer.dob || "", notes: customer.notes || "" }
-    : { name: "", mobile: "", coach: "", gender: "", dob: "", notes: "" });
+    : { name: "", mobile: "", coach: "", gender: "", dob: "", notes: "", invited: false, invite_number: "", invite_batch: "", day1: true });
   const [run, busy] = useAction();
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   async function save(e) {
     e.preventDefault();
     const body = { ...f, coach: f.coach || null, club: ctx.club };
+    if (!f.invited) { delete body.invite_number; delete body.invite_batch; delete body.day1; }
+    delete body.invited;
     const r = await run(() => api(customer ? `customers/${customer.id}` : "customers", { method: customer ? "PATCH" : "POST", body, club: ctx.club }),
-      (x) => x.warning || (customer ? "Customer saved." : `${x.name} added.`));
+      (x) => x.message || x.warning || (customer ? "Customer saved." : `${x.name} added.`));
     if (r) onSaved(r);
   }
   return (
@@ -67,6 +69,24 @@ export function CustomerForm({ ctx, customer, onClose, onSaved, title }) {
           <Field label="Date of birth" id="fd" type="date" value={f.dob} onChange={set("dob")} />
         </div>
         <Field label="Notes" id="fo" as="textarea" value={f.notes} onChange={set("notes")} />
+        {!customer && (
+          <div className="card" style={{ padding: 12, gap: 10, background: "var(--ivory)" }}>
+            <label style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}>
+              <input type="checkbox" checked={f.invited} onChange={(e) => setF({ ...f, invited: e.target.checked })} style={{ width: 20, height: 20 }} />
+              <span><b>Came with a friend's coupon</b><br /><span className="muted">Links them to the person who invited them</span></span>
+            </label>
+            {f.invited && <>
+              <div className="btns">
+                <Field label="Coupon number" id="fi" value={f.invite_number} onChange={set("invite_number")} inputMode="numeric" placeholder="e.g. 35" required />
+                <Field label="Batch (only if asked)" id="fib" value={f.invite_batch} onChange={set("invite_batch")} placeholder="e.g. PB-0002" />
+              </div>
+              <label style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}>
+                <input type="checkbox" checked={f.day1} onChange={(e) => setF({ ...f, day1: e.target.checked })} style={{ width: 20, height: 20 }} />
+                <span>They're here today: record Day 1 now</span>
+              </label>
+            </>}
+          </div>
+        )}
         <div className="btns"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy}>Save</button></div>
       </form>
     </Sheet>

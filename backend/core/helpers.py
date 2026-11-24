@@ -63,6 +63,8 @@ def read_club(request):
     """Club to read from. Staff: always their own. Admin: ?club=<id> or None (all clubs)."""
     u = request.user
     if not u.is_admin:
+        if not u.club_id:                       # a staff login without a club must never see every club
+            raise Forbidden("Your login isn't linked to a club. Ask the Super Admin.")
         return u.club
     cid = request.query_params.get("club")
     return Club.objects.filter(pk=cid).first() if cid else None
@@ -188,6 +190,8 @@ def user_json(u):
             "club": u.club_id, "club_name": u.club.name if u.club else None, "is_active": u.is_active,
             "upline_name": u.upline_name, "upline_mobile": u.upline_mobile, "upline_herbalife_id": u.upline_herbalife_id,
             "must_change_password": u.must_change_password,
+            "last_login": d(u.last_login) if u.last_login else None,
+            "temp_password_expires": d(u.temp_password_expires) if u.temp_password_expires else None,
             "owned_clubs": [{"id": c.id, "name": c.name, "city": c.city} for c in u.admin_clubs.filter(is_active=True)] if u.role == "ADMIN" else []}
 
 

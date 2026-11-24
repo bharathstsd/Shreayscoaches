@@ -5,12 +5,13 @@ import { ChangePassword, Login } from "./screens/Auth";
 import { Allocate, AuditLog, ClubDetail, Clubs, Coupons, ImportExcel, Resets } from "./screens/Admin";
 import { Customer } from "./screens/Customers";
 import { Cvc, Launch, More, Tree, Trials, Weekly } from "./screens/Club";
+import { Users } from "./screens/Users";
 import { AdminOverview, ClubHome, CoachesList, CustomersList, DeskPage, ReferralsList, SearchOverlay } from "./screens/V2";
 
 // Pages per workspace. The Admin console looks after every club; a club workspace is where coupons, visitors and programs are recorded.
 const ADMIN_PAGES = {
   overview: ["Overview", AdminOverview], clubs: ["Clubs", Clubs], club: ["Club details", ClubDetail], coupons: ["Coupons", Coupons],
-  allocate: ["Allocate coupons", Allocate], resets: ["Password resets", Resets], import: ["Import from Excel", ImportExcel],
+  allocate: ["Allocate coupons", Allocate], users: ["Users", Users], resets: ["Password resets", Resets], import: ["Import from Excel", ImportExcel],
   audit: ["Activity log", AuditLog], password: ["Change password", ChangePassword], more: ["More", More],
 };
 const CLUB_PAGES = {
@@ -19,7 +20,7 @@ const CLUB_PAGES = {
   coaches: ["Coaches", CoachesList], tree: ["Referral trees", Tree], more: ["More", More], password: ["Change password", ChangePassword],
 };
 
-const SELF_TITLED = ["overview", "home", "desk", "customers", "referrals", "coaches", "clubs", "password"];
+const SELF_TITLED = ["overview", "home", "desk", "customers", "referrals", "coaches", "clubs", "password", "users"];
 
 function parseHash() {
   const h = (window.location.hash || "").replace(/^#/, "");
@@ -78,12 +79,8 @@ function Shell() {
   if (booting) return <div className="app"><Loading /></div>;
   if (!user) {
     return (
-      <div className="app"><Login onLogin={(u, portal) => {
-        if (u.role === "ADMIN") {
-          const own = u.owned_clubs || [];
-          const next = portal === "club" && own.length ? String(own[0].id) : "admin";
-          setWs(next); store.set("sww_ws", next);
-        }
+      <div className="app"><Login onLogin={(u) => {
+        // One login for everyone. A Super Admin returns to the workspace they used last (Admin console the first time).
         setUser(u); go("");
       }} /></div>
     );
@@ -113,11 +110,11 @@ function Shell() {
   const nav = inClub
     ? [["home", "Home", "home"], ["desk", "Coupon desk", "desk"], ["customers", "Customers", "users"], ["referrals", "Referrals", "ref"],
        ["trials", "3-day trials", "trial"], ["coaches", "Coaches", "coach"]]
-    : [["overview", "Overview", "home"], ["clubs", "Clubs", "clubs"], ["coupons", "Coupons", "coupon"], ["resets", "Resets", "key"],
+    : [["overview", "Overview", "home"], ["clubs", "Clubs", "clubs"], ["coupons", "Coupons", "coupon"], ["users", "Users", "users"], ["resets", "Resets", "key"],
        ["import", "Import", "upload"], ["audit", "Activity", "log"]];
   const sideMore = inClub ? [["cvc", "CVC membership", "star"], ["weekly", "Weekly results", "award"], ...(role !== "SUPERVISOR" ? [["tree", "Referral trees", "tree"]] : [])] : [];
   const tabs = inClub ? [...nav.filter((n) => !["trials", "coaches"].includes(n[0])), ["more", "More", "grid"]]
-    : [...nav.filter((n) => ["overview", "clubs", "coupons", "resets"].includes(n[0])), ["more", "More", "grid"]];
+    : [...nav.filter((n) => ["overview", "clubs", "coupons", "users"].includes(n[0])), ["more", "More", "grid"]];
   const rootOf = { club: "clubs", allocate: "coupons", customer: "customers", weekly: inClub ? "weekly" : "", password: "" };
   const active = rootOf[name] !== undefined ? rootOf[name] : name;
   const inTabs = tabs.some((n) => n[0] === active);

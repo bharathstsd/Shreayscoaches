@@ -357,7 +357,7 @@ function DeskResult({ ctx, d, flash, refresh, reset, choose }) {
   const body = (x) => ({ club: ctx.club, ...x });
   const call = (path, x, msg) => run(() => api(path, { method: "POST", club: ctx.club, body: body(x) }), msg);
   if (d.state === "missing") return <div className="alert bad"><b>#{d.number} isn't one of {ctx.clubName}'s coupons.</b> Check the number printed on the coupon.</div>;
-  if (d.state === "other") return <div className="coupon"><Ticket d={d} /><div className="alert bad" style={{ flex: 1 }}><b>This coupon belongs to {d.club}.</b> Coupons can be used only at the club that issued them.</div></div>;
+  if (d.state === "other") return <div className="coupon"><Ticket d={d} /><div className="alert bad" style={{ flex: 1 }}><b>This coupon belongs to {d.club || "another club"}.</b> Coupons can be used only at the club that issued them.</div></div>;
   if (d.state === "choose") {
     return (<>
       <p className="big" style={{ margin: 0 }}>#{d.number} is in {d.choices.length} batches</p>

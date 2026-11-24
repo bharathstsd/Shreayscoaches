@@ -22,6 +22,7 @@ export function More({ ctx }) {
     ...(ctx.role !== "SUPERVISOR" ? [["tree", "tree", "Referral trees", "Who referred whom"]] : []),
     ["key", "password", "Change my password", "For your own account only"],
   ] : [
+    ["users", "users", "Users", "Super Admins and Club Owner logins"], ["key", "resets", "Password resets", "Requests from the login page"],
     ["upload", "import", "Import from Excel", "Clubs, Club Owners and coaches"], ["log", "audit", "Activity log", "Logins and every change"],
     ["key", "password", "Change my password", "For your own account only"],
   ];

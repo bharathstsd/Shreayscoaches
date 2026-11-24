@@ -308,12 +308,55 @@ class V2Tests(FlowBase):
         self.assertEqual(self.sp.get("/api/dash").status_code, 403)
 
 
+class V3Tests(FlowBase):
+    def test_no_other_club_details_for_club_logins(self):
+        i1 = self.issue(self.ow, self.ravi, 1).data
+        self.ow.post("/api/visits", {"issue": i1["id"], "visitor_mobile": "9701100223", "visitor_name": "Kavya"}, format="json")
+        owb = self.as_(self.owner_b)
+        self.assertIsNone(owb.get("/api/desk?number=1").data["club"])
+        self.alloc(self.ad, self.b["id"], self.owner_b.club, 51, 60)     # self.b is the batch here
+        kav_b = self.customer(owb, "Kavya B", "9701100223", self.coach_b)
+        ib = owb.post("/api/issues", {"customer": self.customer(owb, "Sita", "9000011111", self.coach_b), "unit": self.unit(self.b["code"], 51),
+                                      "purpose": "TRIAL", "coach": self.coach_b.id}, format="json").data
+        err = owb.post("/api/visits", {"issue": ib["id"], "visitor": kav_b}, format="json").data["error"]
+        self.assertIn("another club", err)
+        self.assertNotIn("Kavya", err)
+
+    def test_new_customer_with_invitation(self):
+        i1 = self.issue(self.ow, self.ravi, 1).data
+        r = self.ow.post("/api/customers", {"name": "Divya", "mobile": "9550012399", "invite_number": "1", "day1": True}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertIn("Day 1 recorded", r.data["message"])
+        d = self.ow.get("/api/desk?number=1").data
+        self.assertEqual((d["state"], d["visitor"]), ("d1", "Divya"))
+        r = self.ow.post("/api/customers", {"name": "Hari", "mobile": "9550012300", "invite_number": "1"}, format="json")
+        self.assertIn("already has a visitor", r.data["error"])
+        self.assertFalse(Customer.objects.filter(mobile="9550012300").exists())     # nothing half-created
+        r = self.ow.post("/api/customers", {"name": "Hari", "mobile": "9550012300", "invite_number": "3"}, format="json")
+        self.assertIn("hasn't been given", r.data["error"])
+
+    def test_user_management(self):
+        r = self.ad.post("/api/users", {"role": "ADMIN", "first_name": "Prasanthi", "mobile": "9885529795", "username": "prasanthi"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        pid = r.data["user"]["id"]
+        self.assertTrue(r.data["password"])
+        self.assertEqual(self.ad.patch(f"/api/users/{pid}", {"first_name": "Prasanthi R"}, format="json").data["name"], "Prasanthi R")
+        self.assertEqual(self.ad.post(f"/api/users/{pid}/reset").status_code, 200)
+        self.assertIn("own account", self.ad.post(f"/api/users/{self.admin.id}/reset").data["error"])
+        self.assertIn("your own", self.ad.delete(f"/api/users/{self.admin.id}").data["error"])
+        self.assertTrue(self.ad.delete(f"/api/users/{pid}").data["deactivated"])
+        self.assertIn("taken", self.ad.patch(f"/api/users/{self.owner.id}", {"username": "giri"}, format="json").data["error"])
+        rows = self.ad.get("/api/users").data
+        self.assertTrue(any(u["role"] == "ADMIN" and not u["is_active"] for u in rows))
+        self.assertEqual(self.ow.get("/api/users").status_code, 403)
+
+
 class AccountTests(Base):
     def test_only_club_owner_logins_and_unique_mobile(self):
         ad = self.as_(self.admin)
         up = {"upline_name": "U", "upline_mobile": "9848143809", "upline_herbalife_id": "W2"}
         r = ad.post("/api/users", {"role": "SUPERVISOR", "club": self.b.id, "first_name": "S", "mobile": "9000000099", "herbalife_id": "HL9", **up}, format="json")
-        self.assertIn("Only Club Owner", r.data["error"])
+        self.assertIn("Choose Club Owner or Super Admin", r.data["error"])
         r = ad.post("/api/users", {"role": "OWNER", "club": self.a.id, "first_name": "S", "mobile": "9000000099", "herbalife_id": "HL9", **up}, format="json")
         self.assertIn("already has an active", r.data["error"])
         r = ad.post("/api/users", {"role": "OWNER", "club": self.b.id, "first_name": "S", "mobile": "9000000001", "herbalife_id": "HL9", **up}, format="json")

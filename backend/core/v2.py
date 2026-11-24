@@ -91,7 +91,8 @@ def desk(request):
     if not units:
         other = CouponUnit.objects.filter(number=n, club__isnull=False).exclude(club=club).select_related("club", "batch").first()
         if other:
-            return Response({"state": "other", "number": n, "club": other.club.name, "label": other.label()})
+            return Response({"state": "other", "number": n, "label": other.label(),
+                             "club": other.club.name if request.user.is_admin else None})   # club logins don't see other clubs' names
         return Response({"state": "missing", "number": n})
     if len(units) > 1:
         return Response({"state": "choose", "number": n, "choices": [{"batch_id": u.batch_id, "batch": u.batch.code, "color": u.batch.color,

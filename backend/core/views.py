@@ -135,7 +135,9 @@ def change_password(request):
 @throttle_classes([_throttle("reset")])
 def forgot_password(request):
     ident = text(request.data, "username", label="Username or mobile")
-    user = User.objects.filter(Q(username__iexact=ident) | Q(mobile=ident), is_active=True).exclude(role="ADMIN").first()
+    user = User.objects.filter(Q(username__iexact=ident) | Q(mobile=ident), is_active=True).first()
+    if user and user.is_admin and not User.objects.filter(role="ADMIN", is_active=True).exclude(pk=user.pk).exists():
+        user = None          # the only Super Admin resets their password on the server (manage.sh changepassword)
     if user and not PasswordResetRequest.objects.filter(user=user, status="PENDING").exists():
         PasswordResetRequest.objects.create(user=user, identifier=ident[:150], reason=str(request.data.get("reason") or "")[:255])
         log.info("password reset requested user=%s", user.username)
@@ -179,18 +181,54 @@ def _new_temp_password(request, u):
     expires = timezone.localtime(u.temp_password_expires).strftime("%d %b %Y, %I:%M %p")
     name = u.get_full_name() or u.username
     msg = (f"Hello {name},\nYour temporary login password for Shreyas Wellness World Coupon Management System is:\n"
-           f"Username: {u.username}\nTemporary Password: {pw}\nPlease log in at https://{settings.SITE_HOST}/ (Club Owner login) and change your password immediately. "
+           f"Username: {u.username}\nTemporary Password: {pw}\nPlease log in at https://{settings.SITE_HOST}/ and change your password immediately. "
            f"This password expires at {expires}.")
     return {"password": pw, "message": msg, "expires": d(u.temp_password_expires)}
+
+
+def _admin_detail(request, u):
+    """Edit or deactivate another Super Admin. Nobody can lock out the last active Super Admin or themselves."""
+    data = request.data
+    before = user_json(u)
+    if request.method == "DELETE" or ("is_active" in data and not data.get("is_active")):
+        if u.pk == request.user.pk:
+            raise Rule("You can't deactivate your own account.")
+        if not User.objects.filter(role="ADMIN", is_active=True).exclude(pk=u.pk).exists():
+            raise Rule("At least one Super Admin must stay active.")
+        u.is_active = False
+        u.save(update_fields=["is_active"])
+        Token.objects.filter(user=u).delete()
+        Club.objects.filter(admin_owner=u).update(admin_owner=None)
+        audit(request, "deactivate", "user", u)
+        return Response({"ok": True, "deactivated": True, "message": f"{u.get_full_name() or u.username} can no longer log in."})
+    for f in ("first_name", "last_name"):
+        if f in data:
+            setattr(u, f, text(data, f, f == "first_name", max_len=150))
+    if "mobile" in data:
+        m = clean_mobile(data.get("mobile"))
+        if User.objects.filter(mobile=m).exclude(pk=u.pk).exists():
+            raise Rule("That mobile number is already used by another account.")
+        u.mobile = m
+    if "herbalife_id" in data:
+        u.herbalife_id = text(data, "herbalife_id", False, max_len=40)
+    if "username" in data:
+        u.username = _username(data.get("username"), exclude=u.pk)
+    if data.get("is_active"):
+        u.is_active = True
+    u.save()
+    audit(request, "edit", "user", u, before=before, after=user_json(u))
+    return Response(user_json(u))
 
 
 @api_view(["POST"])
 @permission_classes([AdminOnly])
 def user_reset(request, pk):
-    """Super Admin gives a Club Owner a new temporary password without a request."""
-    u = User.objects.filter(pk=pk, is_active=True).exclude(role="ADMIN").first()
+    """Super Admin gives someone a new temporary password without waiting for a request."""
+    u = User.objects.filter(pk=pk, is_active=True).first()
     if not u:
         raise Rule("That account doesn't exist.")
+    if u.pk == request.user.pk:
+        raise Rule("Use Change password for your own account.")
     res = _new_temp_password(request, u)
     PasswordResetRequest.objects.filter(user=u, status="PENDING").update(status="GENERATED", handled_by=request.user, handled_at=timezone.now())
     return Response(res)
@@ -301,26 +339,26 @@ def users(request):
         return Response([user_json(u) for u in User.objects.select_related("club").order_by("club__name", "role")])
     data = request.data
     role = data.get("role") or "OWNER"
-    if role != "OWNER":
-        raise Rule("Only Club Owner logins can be added.")
-    club = Club.objects.filter(pk=data.get("club")).first()
-    if not club:
-        raise Rule("Choose a club.")
-    if not club.is_active:
-        raise Forbidden(f"{club.name} is disabled. Enable the club before adding staff.")
+    if role not in ("OWNER", "ADMIN"):
+        raise Rule("Choose Club Owner or Super Admin.")
+    club = None
+    if role == "OWNER":
+        club = Club.objects.filter(pk=data.get("club")).first()
+        if not club:
+            raise Rule("Choose the club this Club Owner runs.")
+        if not club.is_active:
+            raise Forbidden(f"{club.name} is disabled. Enable the club before adding staff.")
     mobile = clean_mobile(data.get("mobile"))
-    hid = text(data, "herbalife_id", label="Herbalife / Staff ID", max_len=40)
-    username = (text(data, "username", False, max_len=150) or hid).lower().replace(" ", "")
-    if User.objects.filter(username__iexact=username).exists():
-        raise Rule("That username is already taken.")
+    hid = text(data, "herbalife_id", role == "OWNER", label="Herbalife ID", max_len=40)
+    username = _username(text(data, "username", False, max_len=150) or hid or mobile)
     if User.objects.filter(mobile=mobile).exists():
         raise Rule("That mobile number is already used by another account.")
-    if User.objects.filter(club=club, role=role, is_active=True).exists():
-        raise Rule(f"{club.name} already has an active {'Club Owner' if role == 'OWNER' else 'Supervisor'}. Edit or deactivate that account instead.")
+    if club and User.objects.filter(club=club, role=role, is_active=True).exists():
+        raise Rule(f"{club.name} already has an active Club Owner. Edit or deactivate that account instead.")
     up = upline(data, required=(role == "OWNER"))
     pw = temp_password()
     u = User(username=username, first_name=text(data, "first_name", label="Name", max_len=150), last_name=text(data, "last_name", False, max_len=150),
-             role=role, club=club, mobile=mobile, herbalife_id=hid, must_change_password=True, **up,
+             role=role, club=club, mobile=mobile, herbalife_id=hid, must_change_password=True, is_staff=(role == "ADMIN"), **up,
              temp_password_expires=timezone.now() + timedelta(hours=settings.TEMP_PASSWORD_TTL_HOURS))
     u.set_password(pw)
     u.save()
@@ -328,12 +366,24 @@ def users(request):
     return Response({"user": user_json(u), "password": pw}, status=201)
 
 
+def _username(v, exclude=None):
+    import re as _re
+    v = _re.sub(r"\s+", "", str(v or "")).lower()
+    if not _re.fullmatch(r"[a-z0-9._@-]{3,150}", v):
+        raise Rule("Username should be at least 3 letters or numbers, with no spaces.")
+    if User.objects.filter(username__iexact=v).exclude(pk=exclude).exists():
+        raise Rule("That username is already taken.")
+    return v
+
+
 @api_view(["PATCH", "DELETE"])
 @permission_classes([AdminOnly])
 def user_detail(request, pk):
-    u = User.objects.filter(pk=pk).exclude(role="ADMIN").first()
+    u = User.objects.filter(pk=pk).first()
     if not u:
         raise Rule("That account doesn't exist.")
+    if u.role == "ADMIN":
+        return _admin_detail(request, u)
     if request.method == "DELETE":
         used = (Customer.objects.filter(created_by=u).exists() or CouponIssue.objects.filter(created_by=u).exists()
                 or Redemption.objects.filter(created_by=u).exists() or ReferralVisit.objects.filter(created_by=u).exists())
@@ -361,6 +411,8 @@ def user_detail(request, pk):
         if User.objects.filter(mobile=m).exclude(pk=u.pk).exists():
             raise Rule("That mobile number is already used by another account.")
         u.mobile = m
+    if "username" in data:
+        u.username = _username(data.get("username"), exclude=u.pk)
     if "is_active" in data:
         u.is_active = bool(data.get("is_active"))
     if "club" in data or "role" in data:
@@ -620,9 +672,23 @@ def customers(request):
         limit = min(int(request.query_params.get("limit") or 200), 500)
         return Response([customer_json(c) for c in qs[:limit]])
     club = write_club(request, request.data)
-    c = create_customer(request, club, request.data)
-    audit(request, "create", "customer", c, after=customer_json(c))
-    return Response(customer_json(_customer_qs().get(pk=c.pk), full=True), status=201)
+    data = request.data
+    invite = str(data.get("invite_number") or "").strip()
+    with transaction.atomic():
+        if invite:      # check the coupon before creating anyone
+            issue = find_issue_by_number(club, invite, data.get("invite_batch"))
+            _check_issue_usable(issue)
+            if clean_mobile(data.get("mobile")) == issue.customer.mobile:
+                raise Rule(f"{issue.unit.label()} belongs to {issue.customer.name}. A customer can't use their own coupon.")
+            _check_new_visitor(request, club, clean_mobile(data.get("mobile")))
+        c = create_customer(request, club, data)
+        audit(request, "create", "customer", c, after=customer_json(c))
+        if invite:
+            register_visit(request, club, issue, c, data.get("coach"), bool(data.get("day1")))
+    out = customer_json(_customer_qs().get(pk=c.pk), full=True)
+    if invite:
+        out["message"] = f"{c.name} added and linked to {issue.customer.name}'s coupon {issue.unit.label()}" + (" · Day 1 recorded." if data.get("day1") else ".")
+    return Response(out, status=201)
 
 
 def _dob(v):
@@ -703,7 +769,8 @@ def _start_trial(request, cust):
     # one trial per mobile number, ever, across all clubs
     other = Trial.objects.filter(customer__mobile=cust.mobile).exclude(customer=cust).select_related("club", "customer").first()
     if other:
-        raise Rule(f"Mobile {cust.mobile} has already had a 3-day trial ({other.customer.name}, {other.club.name}). One trial per mobile number.")
+        where = f" ({other.customer.name}, {other.club.name})" if other.club_id == cust.club_id or request.user.is_admin else " at another club"
+        raise Rule(f"Mobile {cust.mobile} has already had a 3-day trial{where}. One trial per mobile number.")
     return Trial.objects.create(customer=cust, club=cust.club, created_by=request.user)
 
 
@@ -918,12 +985,6 @@ def visits(request):
         issue = CouponIssue.objects.select_for_update().select_related("customer", "unit__batch").filter(pk=data.get("issue")).first()
         if not issue or issue.club_id != club.id:
             raise Rule("This coupon was issued by another club. It can only be used at the club that issued it.")
-        if issue.is_paused:
-            raise Rule("This coupon is paused (reported lost). Resume it first.")
-        if hasattr(issue, "visit"):
-            raise Rule(f"{issue.unit.label()} already has a visitor: {issue.visit.visitor.name}.")
-        if issue.is_expired:
-            raise Rule(f"{issue.unit.label()} expired on {issue.expires_on:%d %b %Y}. It can't be used for a visit.")
         inviter = issue.customer
         if data.get("visitor"):
             visitor = customer_for(club, data.get("visitor"))
@@ -931,33 +992,74 @@ def visits(request):
             mob = clean_mobile(data.get("visitor_mobile"))
             visitor = Customer.objects.filter(club=club, mobile=mob, is_deleted=False).first()
             if not visitor:
+                _check_issue_usable(issue)
                 if mob == inviter.mobile:
                     raise Rule(f"This is {inviter.name}'s own number. A customer can't use their own coupon. It's meant for a friend.")
-                _check_new_visitor(mob)
+                _check_new_visitor(request, club, mob)
                 visitor = create_customer(request, club, {"name": text(data, "visitor_name", label="Friend's name", max_len=120), "mobile": mob})
                 audit(request, "create", "customer", visitor, after=customer_json(visitor))
-        if visitor.id == inviter.id or visitor.mobile == inviter.mobile:
-            raise Rule(f"This is {inviter.name}'s own number. A customer can't use their own coupon. It's meant for a friend.")
-        _check_new_visitor(visitor.mobile)
-        coach = coach_for(club, data.get("coach")) if data.get("coach") else (issue.coach if issue.coach.is_active else coach_for(club, None))
-        v = ReferralVisit.objects.create(issue=issue, visitor=visitor, club=club, coach=coach, inviter_name=inviter.name,
-                                         inviter_mobile=inviter.mobile, created_by=request.user)
-        if not visitor.coach:
-            visitor.coach = coach
-            visitor.save(update_fields=["coach"])
-        if data.get("day1"):
-            r1 = Redemption.objects.create(visit=v, club=club, day=1, created_by=request.user)
-            audit(request, "redeem", "redemption", r1, after={"visit": v.id, "day": 1})
-    audit(request, "register_visit", "referral_visit", v, after={"coupon": issue.unit.label(), "visitor": visitor.id})
+        v = register_visit(request, club, issue, visitor, data.get("coach"), bool(data.get("day1")))
     return Response(visit_json(v), status=201)
 
 
-def _check_new_visitor(mobile):
-    """A person (by mobile) can be a referral visitor only once, ever, and not if they're already a member."""
+def _check_issue_usable(issue):
+    if issue.is_paused:
+        raise Rule("This coupon is paused (reported lost). Resume it first.")
+    if hasattr(issue, "visit"):
+        raise Rule(f"{issue.unit.label()} already has a visitor: {issue.visit.visitor.name}.")
+    if issue.is_expired:
+        raise Rule(f"{issue.unit.label()} expired on {issue.expires_on:%d %b %Y}. It can't be used for a visit.")
+
+
+def register_visit(request, club, issue, visitor, coach_id=None, day1=False):
+    """Link a friend to the coupon that brought them (and optionally record Day 1). Call inside a transaction."""
+    _check_issue_usable(issue)
+    inviter = issue.customer
+    if visitor.id == inviter.id or visitor.mobile == inviter.mobile:
+        raise Rule(f"This is {inviter.name}'s own number. A customer can't use their own coupon. It's meant for a friend.")
+    _check_new_visitor(request, club, visitor.mobile, exclude=visitor)
+    coach = coach_for(club, coach_id) if coach_id else (issue.coach if issue.coach.is_active else coach_for(club, None))
+    v = ReferralVisit.objects.create(issue=issue, visitor=visitor, club=club, coach=coach, inviter_name=inviter.name,
+                                     inviter_mobile=inviter.mobile, created_by=request.user)
+    if not visitor.coach:
+        visitor.coach = coach
+        visitor.save(update_fields=["coach"])
+    if day1:
+        r1 = Redemption.objects.create(visit=v, club=club, day=1, created_by=request.user)
+        audit(request, "redeem", "redemption", r1, after={"visit": v.id, "day": 1})
+    audit(request, "register_visit", "referral_visit", v, after={"coupon": issue.unit.label(), "visitor": visitor.id})
+    return v
+
+
+def find_issue_by_number(club, number, batch=None):
+    """The issued coupon with this printed number in this club (batch code or id when the number exists in two batches)."""
+    try:
+        n = int(str(number).strip().lstrip("#"))
+    except (TypeError, ValueError):
+        raise Rule("Type the coupon number printed on the friend's coupon.")
+    units = CouponUnit.objects.filter(club=club, number=n).select_related("batch")
+    if batch:
+        units = units.filter(Q(batch__code__iexact=str(batch)) | Q(batch_id=int(batch) if str(batch).isdigit() else -1))
+    units = list(units)
+    if not units:
+        raise Rule(f"#{n} isn't one of this club's coupons. Check the number on the friend's coupon.")
+    if len(units) > 1:
+        raise Rule(f"#{n} is in more than one batch ({', '.join(u.batch.code for u in units)}). Choose the batch printed on the coupon.")
+    u = units[0]
+    if u.status != "ISSUED":
+        raise Rule(f"{u.label()} hasn't been given to anyone yet, so it can't have brought a friend.")
+    return CouponIssue.objects.select_for_update().select_related("customer", "unit__batch").get(unit=u)
+
+
+def _check_new_visitor(request, club, mobile, exclude=None):
+    """A person (by mobile) can be a referral visitor only once, ever, and not if they're already a member.
+    Details of another club are shown to the Super Admin only."""
     prev = ReferralVisit.objects.filter(visitor__mobile=mobile).select_related("visitor", "club", "issue__unit__batch").first()
     if prev:
-        raise Rule(f"{prev.visitor.name} has already visited as a friend (coupon {prev.issue.unit.label()} at {prev.club.name}, "
-                   f"{timezone.localtime(prev.created_at):%d %b %Y}). A person can be a referral visitor only once.")
+        if prev.club_id == club.id or request.user.is_admin:
+            raise Rule(f"{prev.visitor.name} has already visited as a friend (coupon {prev.issue.unit.label()} at {prev.club.name}, "
+                       f"{timezone.localtime(prev.created_at):%d %b %Y}). A person can be a referral visitor only once.")
+        raise Rule("This mobile number has already been used for a referral visit at another club. A person can be a referral visitor only once.")
     if Trial.objects.filter(customer__mobile=mobile).exists() or CvcMembership.objects.filter(customer__mobile=mobile).exists():
         raise Rule("This person has already had a trial or is a CVC member. Referral coupons are for new people.")
 
