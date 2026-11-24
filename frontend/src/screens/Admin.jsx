@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
-import { Dashboard } from "./Dashboard";
 import { copyText, Empty, Field, fmtDate, Icon, Kv, Loading, Sheet, useAction, useLoad, useToast } from "../ui";
 
-export function AdminHome({ ctx }) {
-  return <Dashboard ctx={ctx} greeting={"Good " + greet() + ", " + (ctx.user.first_name || ctx.user.username)} />;
-}
 export const greet = () => { const h = new Date().getHours(); return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening"; };
 
 // ---------------- clubs ----------------
@@ -18,11 +14,9 @@ export function Clubs({ ctx }) {
   const list = data.filter((c) => !q || (c.name + c.city + (c.owner || "") + (c.supervisor || "")).toLowerCase().includes(q.toLowerCase()));
   return (
     <>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <input className="inp" id="clubSearch" style={{ flex: "1 1 240px" }} placeholder="Search clubs, cities or staff" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search clubs" />
-        <button className="btn" onClick={() => setAdding(true)}>+ New club</button>
-        <button className="btn ghost" onClick={() => ctx.go("import")}>Import from Excel</button>
-      </div>
+      <div className="head"><div><p className="eyebrow">Admin console</p><h1 className="pg">Nutrition clubs</h1></div>
+        <div className="rowflex"><button className="btn ghost" style={{ width: "auto" }} onClick={() => ctx.go("import")}>Import from Excel</button><button className="btn" style={{ width: "auto" }} onClick={() => setAdding(true)}>+ New club</button></div></div>
+      <label className="sinp" htmlFor="clubSearch"><Icon name="search" size={18} /><input id="clubSearch" placeholder="Search clubs, cities or owners" value={q} onChange={(e) => setQ(e.target.value)} /></label>
       <div className="kpis" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))" }}>
         {list.map((c) => (
           <button key={c.id} className="card" style={{ textAlign: "left", cursor: "pointer", ...(c.is_active ? {} : { background: "#F8F1F0", borderColor: "#E7CFCC" }) }} onClick={() => ctx.go("club", c.id)}>
@@ -31,7 +25,7 @@ export function Clubs({ ctx }) {
               <span style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 600 }}>{c.name}</b><br /><span className="muted">{c.city}</span></span>
               <span className={"tag" + (c.is_active ? "" : " red")}>{c.is_active ? "Active" : "Disabled"}</span>
             </div>
-            <Kv k="Club Owner" v={c.owner || "Not created"} /><Kv k="Supervisor" v={c.supervisor || "Not created"} /><Kv k="Coupons in stock" v={c.stock} />
+            <Kv k="Club Owner" v={c.admin_owner ? (c.admin_owner_name + " (Super Admin)") : (c.owner || "Not created")} />{c.supervisor && <Kv k="Supervisor" v={c.supervisor} />}<Kv k="Coaches" v={c.coaches} /><Kv k="Coupons in stock" v={c.stock} />
           </button>
         ))}
       </div>
@@ -72,6 +66,7 @@ export function ClubDetail({ ctx, arg }) {
   const [confirm, setConfirm] = useState(false);
   const [newPw, setNewPw] = useState(null);
   const [resetPwd, setResetPwd] = useState(null);
+  const [removing, setRemoving] = useState(null);
   const toast = useToast();
   if (error) return <p className="err">{error}</p>;
   if (!data) return <Loading />;
@@ -86,6 +81,11 @@ export function ClubDetail({ ctx, arg }) {
   async function resetPw(u) {
     const r = await run(() => api(`users/${u.id}/reset`, { method: "POST" }));
     if (r) setResetPwd({ ...r, name: u.name });
+  }
+  async function runIt(on) {
+    const r = await run(() => api(`clubs/${c.id}`, { method: "PATCH", body: { admin_owner: on ? ctx.user.id : null } }),
+      on ? `You now run ${c.name}. Switch to it from the header.` : `${c.name} is no longer marked as your club.`);
+    if (r) { reload(); ctx.refreshClubs(); api("auth/me").then(ctx.setUser).catch(() => {}); }
   }
   async function removeStaff(u) {
     const r = await run(() => api(`users/${u.id}`, { method: "DELETE" }), (x) => x.message || "Account deleted.");
@@ -109,15 +109,22 @@ export function ClubDetail({ ctx, arg }) {
             <div className="kpi"><b>{c.trials}</b><span>Trials</span></div><div className="kpi"><b>{c.cvc}</b><span>CVC</span></div>
           </div>
           <div className="card">
+            <p className="lbl">Work in this club</p>
+            <button className="btn" disabled={!c.is_active} onClick={() => ctx.switchWs(String(c.id))}>Open {c.name} workspace</button>
+            {c.admin_owner === ctx.user.id
+              ? <div className="row" style={{ cursor: "default" }}><span className="grow"><b>You run this club</b><span className="muted">It appears under "My club" in the header, and the Club Owner login takes you straight here.</span></span><button className="chip" disabled={busy} onClick={() => runIt(false)}>Stop</button></div>
+              : !roles.OWNER && <button className="row" disabled={busy || !c.is_active} onClick={() => runIt(true)}><span className="grow"><b>I run this club</b><span className="muted">Be this club's Owner with your Super Admin login. No second account needed.</span></span></button>}
+          </div>
+          <div className="card">
             <p className="lbl">Staff logins</p>
             <p className="muted">One Club Owner login per club. Username, mobile and Herbalife ID must be unique.</p>
-            {["OWNER", ...(roles.SUPERVISOR ? ["SUPERVISOR"] : [])].map((role) => {
+            {[...(c.admin_owner && !roles.OWNER ? [] : ["OWNER"]), ...(roles.SUPERVISOR ? ["SUPERVISOR"] : [])].map((role) => {
               const s = roles[role];
               return s ? (
                 <div key={role} className="row" style={{ cursor: "default" }}>
                   <span className="grow"><b>{s.name}</b><span className="muted">{role === "OWNER" ? "Club Owner" : "Supervisor"} · {s.username} · {s.mobile}{s.herbalife_id ? " · " + s.herbalife_id : ""}{s.upline_name ? " · upline " + s.upline_name : ""}</span></span>
                   <button className="chip" onClick={() => resetPw(s)} disabled={busy || !c.is_active}>Reset password</button>
-                  <button className="chip" onClick={() => removeStaff(s)} disabled={busy}>Remove</button>
+                  <button className="chip" onClick={() => (role === "OWNER" ? setRemoving(s) : removeStaff(s))} disabled={busy}>Remove</button>
                 </div>
               ) : (
                 <button key={role} className="row" disabled={!c.is_active} onClick={() => setStaffForm(role)}><span className="grow"><b>+ Add {role === "OWNER" ? "Club Owner" : "Supervisor"}</b><span className="muted">{c.is_active ? "Creates a login with a temporary password" : "Enable the club first"}</span></span></button>
@@ -135,6 +142,12 @@ export function ClubDetail({ ctx, arg }) {
       </div>
       {editing && <ClubForm club={c} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); reload(); ctx.refreshClubs(); }} />}
       {staffForm && <StaffForm club={c} role={staffForm} onClose={() => setStaffForm(null)} onSaved={(r) => { setStaffForm(null); setNewPw(r); reload(); ctx.refreshClubs(); }} />}
+      {removing && (
+        <Sheet title={`Remove ${removing.name}?`} onClose={() => setRemoving(null)}>
+          <p style={{ margin: 0 }}>{c.name} will have no Club Owner login until you add a new one. Nobody but you can then record coupons or visits there.</p>
+          <div className="btns"><button className="btn ghost" onClick={() => setRemoving(null)}>Cancel</button><button className="btn danger" disabled={busy} onClick={() => { const u = removing; setRemoving(null); removeStaff(u); }}>Remove Club Owner</button></div>
+        </Sheet>
+      )}
       {resetPwd && (
         <Sheet title={`New temporary password · ${resetPwd.name}`} onClose={() => setResetPwd(null)}>
           <p className="muted">Shown only now. Their old password and sessions stop working.</p>
@@ -189,6 +202,8 @@ export function Coupons({ ctx }) {
   const [run, busy] = useAction();
   const [adding, setAdding] = useState(false);
   const [del, setDel] = useState(null);
+  const [valid, setValid] = useState(null);
+  const [taking, setTaking] = useState(null);
   if (b.error || a.error) return <p className="err">{b.error || a.error}</p>;
   if (!b.data || !a.data) return <Loading />;
   async function remove() {
@@ -209,7 +224,8 @@ export function Coupons({ ctx }) {
           {b.data.map((x) => (
             <div key={x.id} className="card">
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><span style={{ width: 12, height: 12, borderRadius: 3, background: x.color }} /><b style={{ flex: 1 }}>{x.code}{x.name ? " · " + x.name : ""}</b><span className="tag grey">#{x.start} – #{x.end}</span></div>
-              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13, color: "var(--muted)" }}><span>{x.quantity} printed</span><span>{x.allocated} allocated</span><span>{x.issued} issued</span><span>{x.free} not allocated</span></div>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13, color: "var(--muted)" }}><span>{x.quantity} printed</span><span>{x.with_clubs} with clubs</span><span>{x.issued} issued</span><span>{x.free} not allocated</span></div>
+              <div className="rowflex"><span className="pill gold">Valid {x.valid_days} days after issue</span><button className="linkbtn" onClick={() => setValid({ ...x, v: String(x.valid_days) })}>Change</button></div>
               {x.deletable ? <button className="btn danger" style={{ alignSelf: "flex-start" }} onClick={() => setDel(x)}>Delete batch permanently</button>
                 : <span className="tag gold" style={{ alignSelf: "flex-start" }}><Icon name="lock" size={12} width={2} />In use ({x.issued} issued) · can't be deleted</span>}
             </div>
@@ -218,13 +234,27 @@ export function Coupons({ ctx }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <p className="lbl">Ranges given to clubs</p>
           {a.data.length === 0 ? <Empty>Nothing allocated yet.</Empty> : (
-            <div className="tbl-wrap"><table style={{ minWidth: 420 }}><thead><tr><th>Club</th><th>Batch</th><th>Numbers</th><th>Qty</th></tr></thead><tbody>
-              {a.data.map((x) => <tr key={x.id}><td>{x.club}</td><td>{x.batch}</td><td>#{x.start} – #{x.end}</td><td>{x.quantity}</td></tr>)}
+            <div className="tbl-wrap"><table style={{ minWidth: 480 }}><thead><tr><th>Club</th><th>Batch</th><th>Numbers</th><th>Unused</th><th /></tr></thead><tbody>
+              {a.data.map((x) => <tr key={x.id}><td>{x.club}</td><td>{x.batch}</td><td>#{x.start} – #{x.end}</td><td>{x.unused} of {x.quantity}</td>
+                <td style={{ textAlign: "right" }}>{x.unused > 0 && <button className="chip" onClick={() => setTaking(x)}>Take back unused</button>}</td></tr>)}
             </tbody></table></div>
           )}
         </div>
       </div>
       {adding && <BatchForm onClose={() => setAdding(false)} onSaved={() => { setAdding(false); b.reload(); }} />}
+      {valid && (
+        <Sheet title={`Validity for ${valid.code}`} onClose={() => setValid(null)}>
+          <p className="muted">How many days a coupon from this batch can be used after it's issued. Coupons already issued keep their expiry date.</p>
+          <ValidChips value={valid.v} onChange={(v) => setValid({ ...valid, v })} />
+          <div className="btns"><button className="btn ghost" onClick={() => setValid(null)}>Cancel</button><button className="btn" disabled={busy} onClick={async () => { const r = await run(() => api(`batches/${valid.id}`, { method: "PATCH", body: { valid_days: valid.v } }), `${valid.code}: coupons now valid ${valid.v} days after issue.`); if (r) { setValid(null); b.reload(); } }}>Save</button></div>
+        </Sheet>
+      )}
+      {taking && (
+        <Sheet title={`Take back from ${taking.club}?`} onClose={() => setTaking(null)}>
+          <p style={{ margin: 0 }}>{taking.unused} unused coupons from {taking.batch} #{taking.start} – #{taking.end} go back to the batch, so you can allocate them again. Coupons already issued stay with the club.</p>
+          <div className="btns"><button className="btn ghost" onClick={() => setTaking(null)}>Cancel</button><button className="btn" disabled={busy} onClick={async () => { const x = taking; setTaking(null); const r = await run(() => api(`allocations/${x.id}/return`, { method: "POST" }), (y) => y.message); if (r) { a.reload(); b.reload(); ctx.refreshClubs(); } }}>Take back</button></div>
+        </Sheet>
+      )}
       {del && (
         <Sheet title={`Delete ${del.code}?`} onClose={() => setDel(null)}>
           <p style={{ margin: 0 }}>This permanently removes the batch, its {del.quantity} coupon numbers and any ranges given to clubs from it. No coupon from it has been issued. This can't be undone.</p>
@@ -235,8 +265,18 @@ export function Coupons({ ctx }) {
   );
 }
 
+export function ValidChips({ value, onChange }) {
+  const preset = ["15", "30", "45", "60", "90"];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="chips">{preset.map((v) => <button type="button" key={v} className={"chip" + (String(value) === v ? " on" : "")} onClick={() => onChange(v)}>{v} days</button>)}</div>
+      <Field label="Or type the number of days (1–365)" id="vd" value={value} onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
+    </div>
+  );
+}
+
 function BatchForm({ onClose, onSaved }) {
-  const [f, setF] = useState({ name: "", start: "1", end: "1000", print_date: "" });
+  const [f, setF] = useState({ name: "", start: "1", end: "1000", print_date: "", valid_days: "30" });
   const [run, busy] = useAction();
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   async function save(e) {
@@ -250,19 +290,22 @@ function BatchForm({ onClose, onSaved }) {
         <p className="muted">Numbers can repeat across batches. Each coupon is identified by batch + number, so print the batch code on the bundle label.</p>
         <Field label="Batch name (optional)" id="bn" value={f.name} onChange={set("name")} placeholder="e.g. Diwali batch" />
         <div className="btns"><Field label="First number" id="bs" value={f.start} onChange={set("start")} inputMode="numeric" required /><Field label="Last number" id="be" value={f.end} onChange={set("end")} inputMode="numeric" required /></div>
-        <Field label="Print date" id="bd" type="date" value={f.print_date} onChange={set("print_date")} />
+        <Field label="Print date" id="bd" type="date" value={f.print_date} onChange={set("print_date")} max={new Date().toISOString().slice(0, 10)} />
+        <p className="lbl" style={{ marginTop: 4 }}>Valid for how many days after it's issued?</p>
+        <ValidChips value={f.valid_days} onChange={(v) => setF({ ...f, valid_days: v })} />
+        {f.valid_days && <div className="banner info">A coupon issued today would expire on {fmtDate(new Date(Date.now() + Number(f.valid_days) * 864e5).toISOString())}. Expired coupons can't be used for Day 1 or Day 2.</div>}
         <div className="btns"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy}>Create batch</button></div>
       </form>
     </Sheet>
   );
 }
 
-export function Allocate({ ctx }) {
+export function Allocate({ ctx, arg }) {
   const b = useLoad("batches");
   const a = useLoad("allocations");
   const cl = useLoad("clubs");
   const [batch, setBatch] = useState(null);
-  const [club, setClub] = useState(ctx.club ? Number(ctx.club) : null);
+  const [club, setClub] = useState(arg ? Number(arg) : ctx.club ? Number(ctx.club) : null);
   const [s, setS] = useState("");
   const [e, setE] = useState("");
   const [run, busy] = useAction();

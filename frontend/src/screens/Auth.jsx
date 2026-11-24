@@ -29,7 +29,7 @@ export function Login({ onLogin }) {
     try {
       const r = await api("auth/login", { method: "POST", body: { username: u.trim(), password: p, portal } });
       setToken(r.token);
-      onLogin(r.user);
+      onLogin(r.user, portal);
     } catch (x) {
       if (x.data && x.data.code === "wrong_portal") setWrong({ portal: x.data.portal, message: x.message });
       else setErr(x.message);

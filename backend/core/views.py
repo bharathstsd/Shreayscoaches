@@ -22,7 +22,7 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from .auth import AdminOnly, NotSupervisor
 from .errors import Forbidden, Rule
-from .helpers import (audit, can_change, upline, clean_mobile, club_json, coach_for, coach_json, customer_for, customer_json, d,
+from .helpers import (stage, parse_date, number, issue_status, audit, can_change, upline, clean_mobile, club_json, coach_for, coach_json, customer_for, customer_json, d,
                       get_scoped, issue_json, read_club, require_change, scoped, snapshot, text, trial_json, user_json,
                       visit_json, write_club)
 from .models import (Allocation, AuditLog, Club, Coach, CouponIssue, CouponUnit, Customer, CvcMembership,
@@ -71,7 +71,8 @@ def login(request):
         if user:
             AuditLog.objects.create(actor=user, club=user.club, action="login_failed", entity="user", entity_id=str(user.pk), ip=client_ip(request))
         raise Rule("Wrong username or password.")
-    if portal in ("admin", "club") and (portal == "admin") != user.is_admin:
+    owns_club = user.is_admin and user.admin_clubs.filter(is_active=True).exists()
+    if portal in ("admin", "club") and (portal == "admin") != user.is_admin and not (portal == "club" and owns_club):
         right = "club" if portal == "admin" else "admin"
         log.info("login wrong portal user=%s portal=%s", user.username, portal)
         msg = ("These are Club Owner login details. Please use the Club Owner login." if right == "club"
@@ -217,20 +218,22 @@ def _club_stats(club):
             "cvc": CvcMembership.objects.filter(club=club).count(),
             "stock": CouponUnit.objects.filter(club=club, status="ALLOCATED").count(),
             "coaches": Coach.objects.filter(club=club, is_active=True).count(),
-            "owner": next((u.get_full_name() or u.username for u in club.staff.all() if u.role == "OWNER" and u.is_active), None),
+            "owner": next((u.get_full_name() or u.username for u in club.staff.all() if u.role == "OWNER" and u.is_active), None)
+            or ((club.admin_owner.get_full_name() or club.admin_owner.username) if club.admin_owner_id else None),
             "supervisor": next((u.get_full_name() or u.username for u in club.staff.all() if u.role == "SUPERVISOR" and u.is_active), None)}
 
 
 @api_view(["GET", "POST"])
 def clubs(request):
     if request.method == "GET":
-        qs = Club.objects.prefetch_related("staff").all()
+        qs = Club.objects.select_related("admin_owner").prefetch_related("staff").all()
         if not request.user.is_admin:
             qs = qs.filter(pk=request.user.club_id)
         return Response([club_json(c, _club_stats(c)) for c in qs])
     if not request.user.is_admin:
         raise Forbidden("Only the Super Admin can create clubs.")
     name = text(request.data, "name", label="Club name", max_len=120)
+    _pincode(request.data.get("pincode"))
     if Club.objects.filter(name__iexact=name).exists():
         raise Rule("A club with this name already exists.")
     c = Club.objects.create(name=name, city=text(request.data, "city", False), state=text(request.data, "state", False) or "Andhra Pradesh",
@@ -254,6 +257,13 @@ def club_detail(request, pk):
                 setattr(c, f, text(request.data, f, f == "name"))
         if "owner_mobile" in request.data:
             c.owner_mobile = clean_mobile(request.data.get("owner_mobile"), required=False)
+        if "pincode" in request.data:
+            c.pincode = _pincode(request.data.get("pincode"))
+        if "admin_owner" in request.data:          # Super Admin runs this club as its Owner
+            aid = request.data.get("admin_owner")
+            c.admin_owner = User.objects.filter(pk=aid, role="ADMIN", is_active=True).first() if aid else None
+            if aid and not c.admin_owner:
+                raise Rule("Only a Super Admin account can be set here.")
         if Club.objects.filter(name__iexact=c.name).exclude(pk=c.pk).exists():
             raise Rule("A club with this name already exists.")
         c.save()
@@ -261,6 +271,13 @@ def club_detail(request, pk):
     allocs = [{"batch": a.batch.code, "start": a.start_number, "end": a.end_number} for a in c.allocations.select_related("batch")]
     staff = [user_json(u) for u in c.staff.all()]
     return Response({**club_json(c, _club_stats(c)), "allocations": allocs, "staff": staff})
+
+
+def _pincode(v):
+    v = str(v or "").strip()
+    if v and not (v.isdigit() and len(v) == 6):
+        raise Rule("Pincode should be 6 digits.")
+    return v
 
 
 @api_view(["POST"])
@@ -369,12 +386,23 @@ def coaches(request):
     if request.user.role == "SUPERVISOR":
         raise Forbidden("Only the Club Owner or Super Admin can add coaches.")
     club = write_club(request, request.data)
+    mob = clean_mobile(request.data.get("mobile"))
+    hid = text(request.data, "herbalife_id", label="Coach Herbalife ID", max_len=40)
+    _coach_dupes(club, mob, hid)
     c = Coach.objects.create(club=club, name=text(request.data, "name", label="Coach name", max_len=120),
-                             mobile=clean_mobile(request.data.get("mobile")),
-                             herbalife_id=text(request.data, "herbalife_id", label="Coach Herbalife ID", max_len=40),
-                             created_by=request.user, **upline(request.data))
+                             mobile=mob, herbalife_id=hid, created_by=request.user, **upline(request.data))
     audit(request, "create", "coach", c, after=coach_json(c))
     return Response(coach_json(c), status=201)
+
+
+def _coach_dupes(club, mob, hid, exclude=None):
+    qs = Coach.objects.filter(club=club, is_active=True).exclude(pk=exclude)
+    other = qs.filter(mobile=mob).first()
+    if other:
+        raise Rule(f"{other.name} already uses mobile {mob} in this club.")
+    other = qs.filter(herbalife_id__iexact=hid).first()
+    if other:
+        raise Rule(f"{other.name} already has Herbalife ID {hid} in this club.")
 
 
 @api_view(["PATCH"])
@@ -395,6 +423,8 @@ def coach_detail(request, pk):
             setattr(c, k, v)
     if "is_active" in request.data:
         c.is_active = bool(request.data.get("is_active"))
+    if c.is_active:
+        _coach_dupes(c.club, c.mobile, c.herbalife_id, exclude=c.pk)
     c.updated_by = request.user
     c.save()
     audit(request, "edit", "coach", c, before=before, after=coach_json(c))
@@ -409,7 +439,8 @@ def _batch_json(b):
     counts = dict(b.units.values_list("status").annotate(n=Count("id")).values_list("status", "n"))
     return {"id": b.id, "code": b.code, "name": b.name, "start": b.start_number, "end": b.end_number, "quantity": b.quantity,
             "print_date": d(b.print_date), "color": b.color, "allocated": counts.get("ALLOCATED", 0) + counts.get("ISSUED", 0),
-            "issued": counts.get("ISSUED", 0), "free": counts.get("FREE", 0), "deletable": counts.get("ISSUED", 0) == 0}
+            "issued": counts.get("ISSUED", 0), "free": counts.get("FREE", 0), "deletable": counts.get("ISSUED", 0) == 0,
+            "valid_days": b.valid_days, "with_clubs": counts.get("ALLOCATED", 0)}
 
 
 @api_view(["GET", "POST"])
@@ -425,22 +456,47 @@ def batches(request):
         raise Rule("The last number must be bigger than the first.")
     if end - start + 1 > 20000:
         raise Rule("One batch can have at most 20,000 coupons.")
+    pdate = parse_date(request.data.get("print_date"), "print date", required=False, not_future=True)
+    valid = _valid_days(request.data.get("valid_days", 30))
     with transaction.atomic():
         last = PrintBatch.objects.select_for_update().aggregate(m=Max("id"))["m"] or 0
         n = last + 1
         while PrintBatch.objects.filter(code=f"PB-{n:04d}").exists():
             n += 1
         b = PrintBatch.objects.create(code=f"PB-{n:04d}", name=text(request.data, "name", False, max_len=80), start_number=start,
-                                      end_number=end, print_date=request.data.get("print_date") or None,
+                                      end_number=end, print_date=pdate, valid_days=valid,
                                       color=COLORS[(n - 1) % len(COLORS)], created_by=request.user)
         CouponUnit.objects.bulk_create([CouponUnit(batch=b, number=i) for i in range(start, end + 1)], batch_size=2000)
-    audit(request, "create", "print_batch", b, after={"code": b.code, "start": start, "end": end})
+    audit(request, "create", "print_batch", b, after={"code": b.code, "start": start, "end": end, "valid_days": valid})
     return Response(_batch_json(b), status=201)
 
 
-@api_view(["DELETE"])
+def _valid_days(v):
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        raise Rule("Enter how many days a coupon stays valid after it's issued.")
+    if not 1 <= n <= 365:
+        raise Rule("Validity should be between 1 and 365 days.")
+    return n
+
+
+@api_view(["PATCH", "DELETE"])
 @permission_classes([AdminOnly])
 def batch_detail(request, pk):
+    if request.method == "PATCH":
+        b = PrintBatch.objects.filter(pk=pk).first()
+        if not b:
+            raise Rule("That batch doesn't exist.")
+        before = {"name": b.name, "valid_days": b.valid_days}
+        if "valid_days" in request.data:
+            b.valid_days = _valid_days(request.data.get("valid_days"))      # applies to coupons issued from now on
+        if "name" in request.data:
+            b.name = text(request.data, "name", False, max_len=80)
+        b.updated_by = request.user
+        b.save()
+        audit(request, "edit", "print_batch", b, before=before, after={"name": b.name, "valid_days": b.valid_days})
+        return Response(_batch_json(b))
     with transaction.atomic():
         b = PrintBatch.objects.select_for_update().filter(pk=pk).first()
         if not b:
@@ -460,8 +516,10 @@ def batch_detail(request, pk):
 def allocations(request):
     if request.method == "GET":
         qs = scoped(Allocation.objects.select_related("batch", "club"), request)
+        unused = dict(CouponUnit.objects.filter(status="ALLOCATED", allocation__isnull=False).values_list("allocation").annotate(n=Count("id")))
         return Response([{"id": a.id, "batch": a.batch.code, "club": a.club.name, "club_id": a.club_id, "start": a.start_number,
-                          "end": a.end_number, "quantity": a.end_number - a.start_number + 1, "date": d(a.created_at)} for a in qs])
+                          "end": a.end_number, "quantity": a.end_number - a.start_number + 1, "unused": unused.get(a.id, 0),
+                          "date": d(a.created_at)} for a in qs])
     if not request.user.is_admin:
         raise Forbidden("Only the Super Admin can allocate coupons.")
     b = PrintBatch.objects.filter(pk=request.data.get("batch")).first()
@@ -489,6 +547,24 @@ def allocations(request):
         CouponUnit.objects.filter(pk__in=[u.pk for u in units]).update(status="ALLOCATED", allocation=a, club=club)
     audit(request, "allocate", "allocation", a, after={"batch": b.code, "start": s, "end": e}, club=club)
     return Response({"id": a.id, "quantity": e - s + 1}, status=201)
+
+
+@api_view(["POST"])
+@permission_classes([AdminOnly])
+def allocation_return(request, pk):
+    """Take back the coupons of an allocation that the club hasn't issued yet."""
+    with transaction.atomic():
+        a = Allocation.objects.select_for_update().select_related("club", "batch").filter(pk=pk).first()
+        if not a:
+            raise Rule("That allocation doesn't exist.")
+        n = CouponUnit.objects.filter(allocation=a, status="ALLOCATED").update(status="FREE", allocation=None, club=None)
+        if not n:
+            raise Rule("Every coupon in this range has been issued, so there is nothing to take back.")
+        left = CouponUnit.objects.filter(allocation=a).count()
+        if not left:
+            a.delete()
+    audit(request, "take_back", "allocation", None, after={"batch": a.batch.code, "club": a.club.name, "returned": n}, club=a.club)
+    return Response({"ok": True, "returned": n, "message": f"{n} unused coupons taken back from {a.club.name}."})
 
 
 def _ranges(nums):
@@ -544,17 +620,34 @@ def customers(request):
         limit = min(int(request.query_params.get("limit") or 200), 500)
         return Response([customer_json(c) for c in qs[:limit]])
     club = write_club(request, request.data)
-    mobile = clean_mobile(request.data.get("mobile"))
-    c = Customer.objects.create(club=club, name=text(request.data, "name", label="Customer name", max_len=120), mobile=mobile,
-                                gender=text(request.data, "gender", False, max_len=10), dob=request.data.get("dob") or None,
-                                notes=text(request.data, "notes", False, max_len=2000),
-                                coach=coach_for(club, request.data.get("coach"), required=False), created_by=request.user)
-    dup = Customer.objects.filter(club=club, mobile=mobile, is_deleted=False).exclude(pk=c.pk).count()
+    c = create_customer(request, club, request.data)
     audit(request, "create", "customer", c, after=customer_json(c))
-    out = customer_json(_customer_qs().get(pk=c.pk), full=True)
-    if dup:
-        out["warning"] = f"{dup} other customer(s) in this club use the same mobile number. Check it's not a duplicate."
-    return Response(out, status=201)
+    return Response(customer_json(_customer_qs().get(pk=c.pk), full=True), status=201)
+
+
+def _dob(v):
+    from datetime import date
+    dt = parse_date(v, "date of birth", required=False, not_future=True)
+    if dt and dt.year < 1910:
+        raise Rule("Check the date of birth.")
+    return dt
+
+
+def _no_dup_mobile(club, mobile, exclude=None):
+    other = Customer.objects.filter(club=club, mobile=mobile, is_deleted=False).exclude(pk=exclude).first()
+    if other:
+        raise Rule(f"{other.name} already uses mobile {mobile} in this club. Open that customer instead.")
+
+
+def create_customer(request, club, data):
+    mobile = clean_mobile(data.get("mobile"))
+    _no_dup_mobile(club, mobile)
+    gender = text(data, "gender", False, max_len=10)
+    if gender and gender not in ("Female", "Male", "Other"):
+        raise Rule("Choose Female, Male or Other.")
+    return Customer.objects.create(club=club, name=text(data, "name", label="Customer name", max_len=120), mobile=mobile,
+                                   gender=gender, dob=_dob(data.get("dob")), notes=text(data, "notes", False, max_len=2000),
+                                   coach=coach_for(club, data.get("coach"), required=False), created_by=request.user)
 
 
 @api_view(["GET", "PATCH", "DELETE"])
@@ -582,12 +675,17 @@ def customer_detail(request, pk):
     if "name" in data:
         c.name = text(data, "name", label="Customer name", max_len=120)
     if "mobile" in data:
-        c.mobile = clean_mobile(data.get("mobile"))
+        m = clean_mobile(data.get("mobile"))
+        if m != c.mobile:
+            _no_dup_mobile(c.club, m, exclude=c.pk)
+            if hasattr(c, "trial") or c.visits.exists() or c.issues.exists():
+                raise Rule("This customer already has a trial, a visit or coupons, so their mobile can't be changed.")
+        c.mobile = m
     for f in ("gender", "notes"):
         if f in data:
             setattr(c, f, text(data, f, False, max_len=2000))
     if "dob" in data:
-        c.dob = data.get("dob") or None
+        c.dob = _dob(data.get("dob"))
     if "coach" in data:
         c.coach = coach_for(c.club, data.get("coach"), required=False)
     c.updated_by = request.user
@@ -602,10 +700,10 @@ def _start_trial(request, cust):
         raise Rule(f"{cust.name} has already taken the 3-day trial.")
     if hasattr(cust, "cvc"):
         raise Rule(f"{cust.name} is already a CVC member.")
-    # one trial per person across all clubs: same mobile AND same name means the same person
-    other = Trial.objects.filter(customer__mobile=cust.mobile, customer__name__iexact=cust.name).exclude(customer=cust).select_related("club").first()
+    # one trial per mobile number, ever, across all clubs
+    other = Trial.objects.filter(customer__mobile=cust.mobile).exclude(customer=cust).select_related("club", "customer").first()
     if other:
-        raise Rule("This person has already taken a 3-day trial" + (" at another club." if other.club_id != cust.club_id else "."))
+        raise Rule(f"Mobile {cust.mobile} has already had a 3-day trial ({other.customer.name}, {other.club.name}). One trial per mobile number.")
     return Trial.objects.create(customer=cust, club=cust.club, created_by=request.user)
 
 
@@ -631,8 +729,11 @@ def trial_detail(request, pk):
     days = request.data.get("days")
     if not isinstance(days, list) or len(days) != 3:
         raise Rule("Send attendance for all 3 days.")
+    d1, d2, d3 = (bool(x) for x in days)
+    if (d2 and not d1) or (d3 and not d2):
+        raise Rule("Mark the trial days in order: Day 1, then Day 2, then Day 3.")
     before = trial_json(t)
-    t.day1, t.day2, t.day3 = (bool(x) for x in days)
+    t.day1, t.day2, t.day3 = d1, d2, d3
     t.completed_at = timezone.now() if t.is_completed else None
     t.updated_by = request.user
     t.save()
@@ -678,18 +779,20 @@ def weekly(request):
     cust = customer_for(club, request.data.get("customer"))
     if not hasattr(cust, "cvc"):
         raise Rule("Weekly checkups are for CVC members.")
-    try:
-        week = timezone.datetime.fromisoformat(str(request.data.get("week_start"))).date()
-    except ValueError:
-        week = timezone.localdate() - timedelta(days=timezone.localdate().weekday())
-    def num(k):
-        v = request.data.get(k)
-        try:
-            return round(float(v), 1) if v not in (None, "") else None
-        except ValueError:
-            raise Rule(f"{k.capitalize()} must be a number.")
+    week = parse_date(request.data.get("week_start"), "week", required=False, not_future=True) or timezone.localdate()
+    week -= timedelta(days=week.weekday())                     # always the Monday of that week
+    if week < cust.cvc.start_date - timedelta(days=cust.cvc.start_date.weekday()):
+        raise Rule("That week is before this customer joined CVC.")
+    weight = number(request.data.get("weight"), "Weight (kg)", 20, 300)
+    waist = number(request.data.get("waist"), "Waist", 10, 250)
+    if weight is None and waist is None:
+        raise Rule("Enter the weight or the waist measurement.")
+    existing = WeeklyResult.objects.filter(customer=cust, week_start=week).first()
+    if existing and existing.award_approved:
+        raise Rule("This week's result is already approved for an award, so it can't be changed.")
     w, _ = WeeklyResult.objects.update_or_create(customer=cust, week_start=week, defaults={
-        "club": club, "weight": num("weight"), "waist": num("waist"), "notes": text(request.data, "notes", False), "created_by": request.user})
+        "club": club, "weight": weight, "waist": waist, "notes": text(request.data, "notes", False), "updated_by": request.user,
+        **({} if existing else {"created_by": request.user})})
     audit(request, "save", "weekly_result", w)
     return Response({"id": w.id}, status=201)
 
@@ -700,6 +803,10 @@ def weekly_approve(request, pk):
         raise Forbidden("Only the Club Owner or Super Admin can approve Best Results awards.")
     w = get_scoped(WeeklyResult, request, pk)
     require_change(request.user, w)
+    if w.award_approved:
+        raise Rule("This award is already approved.")
+    if w.weight is None and w.waist is None:
+        raise Rule("Record the measurements before approving an award.")
     w.award_approved, w.approved_by = True, request.user
     w.save()
     audit(request, "approve_award", "weekly_result", w)
@@ -721,6 +828,10 @@ def issues(request):
     if purpose not in ("TRIAL", "CVC", "WEEKLY"):
         raise Rule("Choose what the coupon is for.")
     with transaction.atomic():
+        if not data.get("customer") and isinstance(data.get("new_customer"), dict):
+            nc = create_customer(request, club, {**data["new_customer"], "coach": data.get("coach")})
+            audit(request, "create", "customer", nc, after=customer_json(nc))
+            data = {**data, "customer": nc.pk}
         cust = Customer.objects.select_for_update().filter(pk=data.get("customer"), club=club, is_deleted=False).first()
         if not cust:
             raise Rule("Choose a customer from this club.")
@@ -758,7 +869,9 @@ def issues(request):
             if not award:
                 raise Rule("This customer has no approved Best Results award waiting for a coupon.")
             q["weekly"] = award
-        issue = CouponIssue.objects.create(unit=unit, customer=cust, club=club, purpose=purpose, coach=coach, created_by=request.user, **q)
+        expires = timezone.localdate() + timedelta(days=unit.batch.valid_days)
+        issue = CouponIssue.objects.create(unit=unit, customer=cust, club=club, purpose=purpose, coach=coach, created_by=request.user,
+                                           expires_on=expires, **q)
         unit.status = "ISSUED"
         unit.save(update_fields=["status"])
     audit(request, "issue", "coupon_issue", issue, after={"coupon": unit.label(), "customer": cust.id, "purpose": purpose})
@@ -781,6 +894,8 @@ def issue_detail(request, pk):
             unit.save(update_fields=["status"])
         return Response({"ok": True, "message": f"{label} is back in stock."})
     # POST = pause / resume a lost or stolen leaflet
+    if not i.is_paused:
+        i.pause_reason = text(request.data, "reason", False, max_len=255) or "Reported lost"
     i.is_paused = not i.is_paused
     i.updated_by = request.user
     i.save()
@@ -807,18 +922,44 @@ def visits(request):
             raise Rule("This coupon is paused (reported lost). Resume it first.")
         if hasattr(issue, "visit"):
             raise Rule(f"{issue.unit.label()} already has a visitor: {issue.visit.visitor.name}.")
-        visitor = customer_for(club, data.get("visitor"))
+        if issue.is_expired:
+            raise Rule(f"{issue.unit.label()} expired on {issue.expires_on:%d %b %Y}. It can't be used for a visit.")
         inviter = issue.customer
+        if data.get("visitor"):
+            visitor = customer_for(club, data.get("visitor"))
+        else:
+            mob = clean_mobile(data.get("visitor_mobile"))
+            visitor = Customer.objects.filter(club=club, mobile=mob, is_deleted=False).first()
+            if not visitor:
+                if mob == inviter.mobile:
+                    raise Rule(f"This is {inviter.name}'s own number. A customer can't use their own coupon. It's meant for a friend.")
+                _check_new_visitor(mob)
+                visitor = create_customer(request, club, {"name": text(data, "visitor_name", label="Friend's name", max_len=120), "mobile": mob})
+                audit(request, "create", "customer", visitor, after=customer_json(visitor))
         if visitor.id == inviter.id or visitor.mobile == inviter.mobile:
-            raise Rule("A customer can't use their own coupon to refer themselves.")
-        coach = coach_for(club, data.get("coach"))
+            raise Rule(f"This is {inviter.name}'s own number. A customer can't use their own coupon. It's meant for a friend.")
+        _check_new_visitor(visitor.mobile)
+        coach = coach_for(club, data.get("coach")) if data.get("coach") else (issue.coach if issue.coach.is_active else coach_for(club, None))
         v = ReferralVisit.objects.create(issue=issue, visitor=visitor, club=club, coach=coach, inviter_name=inviter.name,
                                          inviter_mobile=inviter.mobile, created_by=request.user)
         if not visitor.coach:
             visitor.coach = coach
             visitor.save(update_fields=["coach"])
+        if data.get("day1"):
+            r1 = Redemption.objects.create(visit=v, club=club, day=1, created_by=request.user)
+            audit(request, "redeem", "redemption", r1, after={"visit": v.id, "day": 1})
     audit(request, "register_visit", "referral_visit", v, after={"coupon": issue.unit.label(), "visitor": visitor.id})
     return Response(visit_json(v), status=201)
+
+
+def _check_new_visitor(mobile):
+    """A person (by mobile) can be a referral visitor only once, ever, and not if they're already a member."""
+    prev = ReferralVisit.objects.filter(visitor__mobile=mobile).select_related("visitor", "club", "issue__unit__batch").first()
+    if prev:
+        raise Rule(f"{prev.visitor.name} has already visited as a friend (coupon {prev.issue.unit.label()} at {prev.club.name}, "
+                   f"{timezone.localtime(prev.created_at):%d %b %Y}). A person can be a referral visitor only once.")
+    if Trial.objects.filter(customer__mobile=mobile).exists() or CvcMembership.objects.filter(customer__mobile=mobile).exists():
+        raise Rule("This person has already had a trial or is a CVC member. Referral coupons are for new people.")
 
 
 @api_view(["POST"])
@@ -836,11 +977,15 @@ def redemptions(request):
             raise Rule("This visitor belongs to another club. Coupons are redeemed only at the issuing club.")
         if v.issue.is_paused:
             raise Rule("This coupon is paused (reported lost).")
-        done = set(v.redemptions.filter(is_void=False).values_list("day", flat=True))
-        if day in done:
+        if v.issue.is_expired:
+            raise Rule(f"{v.issue.unit.label()} expired on {v.issue.expires_on:%d %b %Y}.")
+        valid = {r.day: r for r in v.redemptions.filter(is_void=False)}
+        if day in valid:
             raise Rule(f"Day {day} has already been redeemed for this coupon.")
-        if day == 2 and 1 not in done:
+        if day == 2 and 1 not in valid:
             raise Rule("Day 1 must be redeemed before Day 2.")
+        if day == 2 and timezone.localtime(valid[1].created_at).date() >= timezone.localdate():
+            raise Rule("Day 2 can be recorded from tomorrow. Day 1 was today.")
         r = Redemption.objects.create(visit=v, club=club, day=day, created_by=request.user)
     audit(request, "redeem", "redemption", r, after={"visit": v.id, "day": day})
     return Response({"id": r.id, "day": day, "fully_redeemed": day == 2}, status=201)
@@ -983,6 +1128,25 @@ def export_csv(request):
         w.writerow([i.unit.label(), i.club.name, i.customer.name, i.customer.mobile, i.get_purpose_display(), i.coach.name,
                     timezone.localtime(i.created_at).strftime("%d-%m-%Y"), v.visitor.name if v else "", "Yes" if 1 in days else "", "Yes" if 2 in days else ""])
     w.writerow([])
+    w.writerow(["CUSTOMERS"])
+    w.writerow(["Name", "Mobile", "Club", "Coach", "Stage", "Trial start", "Trial days attended", "CVC since", "Added"])
+    cq = Customer.objects.filter(is_deleted=False).select_related("club", "coach", "trial", "cvc")
+    if club:
+        cq = cq.filter(club=club)
+    for c in cq:
+        t = c.trial if hasattr(c, "trial") else None
+        m = c.cvc if hasattr(c, "cvc") else None
+        w.writerow([c.name, c.mobile, c.club.name, c.coach.name if c.coach else "", stage(c), t.start_date.strftime("%d-%m-%Y") if t else "",
+                    sum([t.day1, t.day2, t.day3]) if t else "", m.start_date.strftime("%d-%m-%Y") if m else "", timezone.localtime(c.created_at).strftime("%d-%m-%Y")])
+    w.writerow([])
+    w.writerow(["WEEKLY RESULTS"])
+    w.writerow(["Customer", "Club", "Week of", "Weight", "Waist", "Award approved"])
+    wq = WeeklyResult.objects.select_related("customer", "club")
+    if club:
+        wq = wq.filter(club=club)
+    for r in wq:
+        w.writerow([r.customer.name, r.club.name, r.week_start.strftime("%d-%m-%Y"), r.weight or "", r.waist or "", "Yes" if r.award_approved else ""])
+    w.writerow([])
     w.writerow(["REFERRAL CHAINS"])
     w.writerow(["Started by", "Person", "Generation", "Referred by", "Coupon", "Converted"])
     for t in _tree(club):
@@ -1002,6 +1166,13 @@ def audit_log(request):
         qs = qs.filter(action__in=["login", "login_failed", "logout"])
     elif kind == "changes":
         qs = qs.exclude(action__in=["login", "login_failed", "logout"])
+    p = request.query_params
+    if p.get("club"):
+        qs = qs.filter(club_id=p["club"])
+    if p.get("from"):
+        qs = qs.filter(created_at__date__gte=parse_date(p["from"], "start date"))
+    if p.get("to"):
+        qs = qs.filter(created_at__date__lte=parse_date(p["to"], "end date"))
     return Response([{"at": d(a.created_at), "who": a.actor.username if a.actor else "", "name": (a.actor.get_full_name() if a.actor else ""),
                       "role": a.actor.get_role_display() if a.actor else "", "club": a.club.name if a.club else "",
                       "action": a.action, "entity": a.entity, "entity_id": a.entity_id, "ip": a.ip or ""} for a in qs[:500]])

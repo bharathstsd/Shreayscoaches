@@ -21,6 +21,12 @@ const P = {
   chev: <path d="m9 18 6-6-6-6" />,
   log: <><path d="M4 4h16v16H4z" /><path d="M8 9h8M8 13h8M8 17h5" /></>,
   upload: <><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
+  desk: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M7 10h4M7 14h7" /><circle cx="17" cy="12" r="1.6" /></>,
+  alert: <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />,
+  scale: <path d="M12 3v18M5 7h14M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z" />,
+  down: <path d="m6 9 6 6 6-6" />,
+  ref: <><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z" /><path d="M9 12h6" /></>,
   leaf: <path d="M12 20c-4 0-8-3-9-7 4 0 7 2 9 7Zm0 0c4 0 8-3 9-7-4 0-7 2-9 7Zm0 0c-2-3-2-9 0-14 2 5 2 11 0 14Z" />,
 };
 

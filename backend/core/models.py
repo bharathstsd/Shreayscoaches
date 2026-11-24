@@ -27,6 +27,8 @@ class Club(models.Model):
     owner_mobile = models.CharField(max_length=15, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(default=timezone.now)
+    # A Super Admin who also runs this club as its Owner (one login, workspace switch)
+    admin_owner = models.ForeignKey("core.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="admin_clubs")
 
     class Meta:
         ordering = ["-is_active", "name"]   # disabled clubs always last
@@ -82,6 +84,7 @@ class PrintBatch(Tracked):
     end_number = models.PositiveIntegerField()
     print_date = models.DateField(null=True, blank=True)
     color = models.CharField(max_length=9, default="#B48A2C")
+    valid_days = models.PositiveSmallIntegerField(default=30)   # coupon validity, counted from the day it is issued
 
     class Meta:
         ordering = ["code"]
@@ -188,9 +191,15 @@ class CouponIssue(Tracked):
     weekly = models.OneToOneField(WeeklyResult, null=True, blank=True, on_delete=models.PROTECT, related_name="coupon")
     coach = models.ForeignKey(Coach, on_delete=models.PROTECT)
     is_paused = models.BooleanField(default=False)     # lost / stolen leaflet
+    pause_reason = models.CharField(max_length=255, blank=True)
+    expires_on = models.DateField(null=True, blank=True)   # last day the coupon can be used (issue date + batch validity)
 
     class Meta:
         ordering = ["-created_at"]
+
+    @property
+    def is_expired(self):
+        return bool(self.expires_on and self.expires_on < timezone.localdate())
 
 
 class ReferralVisit(Tracked):

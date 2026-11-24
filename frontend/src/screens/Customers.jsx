@@ -100,7 +100,7 @@ export function Customer({ ctx, arg }) {
             <span className={"tag " + (c.cvc ? "" : "grey")}>{c.cvc ? "CVC member since " + fmtDate(c.cvc.start_date) : "Not a CVC member"}</span>
           </div>
           {c.notes && <p className="muted">{c.notes}</p>}
-          <div className="btns" style={{ marginTop: 6 }}><button className="btn" onClick={() => ctx.go("issue", c.id)}>Issue coupon</button><button className="btn ghost" onClick={() => ctx.go("trials")}>Trials</button></div>
+          <div className="btns" style={{ marginTop: 6 }}><button className="btn" onClick={() => ctx.go("desk")}>Issue a coupon</button><button className="btn ghost" onClick={() => ctx.go("trials")}>Trials</button></div>
         </div>
         <div className="card">
           <p className="lbl">What this customer can get a coupon for</p>

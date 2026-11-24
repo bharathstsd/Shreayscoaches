@@ -123,3 +123,21 @@ cd frontend && npm install && npm run dev
 - **In the app:** Super Admin → Activity log → *Logins* (who logged in, when, from which IP, and wrong-password attempts) or *Changes*.
 - **On the server:** `/var/log/shreyas-coupons/app.log` (logins, reset requests, Excel imports, server errors; rotated at 5 MB × 5),
   or live with `sudo journalctl -u shreyas-coupons -f`. Web traffic: `/var/log/nginx/access.log`.
+
+## v2 (Nov 2026)
+
+- **Workspaces:** the Super Admin can run a club as its Owner with the same login (Clubs → club → "I run this club").
+  The header switch moves between the Admin console and any club. The Club Owner login tab takes him straight to his club.
+- **Coupon desk:** type a coupon number and the app shows the next step: issue it (new customers can be added there),
+  register the friend and record Day 1 together, record Day 2, then start the trial.
+- **Rules:**
+  - One 3-day trial per mobile number, ever.
+  - A person can be a referral visitor only once, ever, and not if they've already had a trial or are a CVC member.
+  - Day 2 must be on a later day than Day 1.
+  - Coupons expire: each print batch has "valid N days after issue". The expiry is fixed when the coupon is issued.
+  - Clearer checks for dates, weekly results, trial-day order, duplicate customers or coaches, and pincode.
+  - Unused coupons can be taken back from a club.
+- **Dashboards:** period filter (Today / 7 days / 30 days / This month / All time), comparison with the previous period,
+  attention cards, club ranking, a Today list for each club, and a setup checklist for new clubs.
+- **Search and filters:** header search (or press `/`) across customers, referrals and coaches. Each list has filter chips with counts.
+- Design mockup: `docs/v2-mockup.html`.

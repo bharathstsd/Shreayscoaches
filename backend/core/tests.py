@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import Club, Coach, CouponUnit, Customer, PasswordResetRequest, PrintBatch, Redemption, Trial, User
+from .models import Allocation, CouponIssue, Club, Coach, CouponUnit, Customer, PasswordResetRequest, PrintBatch, Redemption, Trial, User
 
 
 class Base(TestCase):
@@ -82,7 +82,7 @@ class InventoryTests(Base):
         self.assertFalse(CouponUnit.objects.filter(batch_id=b2["id"]).exists())
 
 
-class FlowTests(Base):
+class FlowBase(Base):
     def setUp(self):
         super().setUp()
         self.ad, self.ow, self.sp = self.as_(self.admin), self.as_(self.owner), self.as_(self.sup)
@@ -94,6 +94,8 @@ class FlowTests(Base):
     def issue(self, client, cust, n, purpose="TRIAL"):
         return client.post("/api/issues", {"customer": cust, "unit": self.unit(self.b["code"], n), "purpose": purpose}, format="json")
 
+
+class FlowTests(FlowBase):
     def test_coupon_cannot_be_issued_twice_or_from_other_club(self):
         self.assertEqual(self.issue(self.ow, self.ravi, 1).status_code, 201)
         r = self.issue(self.ow, self.suresh, 1)
@@ -125,20 +127,21 @@ class FlowTests(Base):
         self.assertIn("7 days", self.ow.post("/api/cvc", {"customer": self.ravi, "start_date": old}, format="json").data["error"])
         self.assertIn("future", self.ow.post("/api/cvc", {"customer": self.ravi, "start_date": future}, format="json").data["error"])
 
-    def test_one_trial_per_person_across_clubs(self):
+    def test_one_trial_per_mobile_across_clubs(self):
         self.ow.post("/api/trials", {"customer": self.ravi}, format="json")
         owb = self.as_(self.owner_b)
-        same = self.customer(owb, "ravi", "9848012345", self.coach_b)
-        r = owb.post("/api/trials", {"customer": same}, format="json")
+        other_name = self.customer(owb, "Ravi Kumar", "9848012345", self.coach_b)    # same mobile, different spelling
+        r = owb.post("/api/trials", {"customer": other_name}, format="json")
         self.assertEqual(r.status_code, 400)
-        self.assertIn("another club", r.data["error"])
-        family = self.customer(owb, "Ravi's wife", "9848012345", self.coach_b)   # shared family number is fine
-        self.assertEqual(owb.post("/api/trials", {"customer": family}, format="json").status_code, 201)
+        self.assertIn("One trial per mobile", r.data["error"])
+        # the same mobile can't be added twice in one club
+        r = self.ow.post("/api/customers", {"name": "Ravi's wife", "mobile": "9848012345"}, format="json")
+        self.assertIn("already uses mobile", r.data["error"])
 
     def test_visit_self_referral_and_same_club(self):
         iss = self.issue(self.ow, self.ravi, 1).data
         r = self.sp.post("/api/visits", {"issue": iss["id"], "visitor": self.ravi, "coach": self.coach.id}, format="json")
-        self.assertIn("refer themselves", r.data["error"])
+        self.assertIn("own coupon", r.data["error"])
         owb = self.as_(self.owner_b)
         vb = self.customer(owb, "Farah", "9111111111", self.coach_b)
         r = owb.post("/api/visits", {"issue": iss["id"], "visitor": vb, "coach": self.coach_b.id}, format="json")
@@ -156,6 +159,8 @@ class FlowTests(Base):
         r1 = self.sp.post("/api/redemptions", {"visit": v["id"], "day": 1}, format="json")
         self.assertEqual(r1.status_code, 201)
         self.assertIn("already been redeemed", self.sp.post("/api/redemptions", {"visit": v["id"], "day": 1}, format="json").data["error"])
+        self.assertIn("from tomorrow", self.sp.post("/api/redemptions", {"visit": v["id"], "day": 2}, format="json").data["error"])
+        Redemption.objects.filter(pk=r1.data["id"]).update(created_at=timezone.now() - timedelta(days=1))
         r2 = self.sp.post("/api/redemptions", {"visit": v["id"], "day": 2}, format="json")
         self.assertEqual(r2.status_code, 201)
         # void Day 1 while Day 2 valid -> blocked; nothing is ever deleted
@@ -199,6 +204,108 @@ class FlowTests(Base):
         self.assertEqual(tree[0]["root"], "Ravi")
         self.assertEqual(tree[0]["size"], 2)
         self.assertEqual(tree[0]["generations"], {1: 1, 2: 1})
+
+
+class V2Tests(FlowBase):
+    """Coupon expiry, once-ever visitors, the coupon desk, Super Admin as Owner, lists and dashboards."""
+
+    def test_expiry_from_batch_validity(self):
+        PrintBatch.objects.filter(pk=self.b["id"]).update(valid_days=10)
+        iss = self.issue(self.ow, self.ravi, 1).data
+        self.assertEqual(iss["expires_on"], (timezone.localdate() + timedelta(days=10)).isoformat())
+        CouponIssue.objects.filter(pk=iss["id"]).update(expires_on=timezone.localdate() - timedelta(days=1))
+        r = self.ow.post("/api/visits", {"issue": iss["id"], "visitor": self.suresh}, format="json")
+        self.assertIn("expired", r.data["error"])
+        d = self.ow.get("/api/desk?number=1").data
+        self.assertEqual(d["state"], "expired")
+        # validity is checked when the batch is created
+        self.assertIn("between 1 and 365", self.ad.post("/api/batches", {"start": 1, "end": 5, "valid_days": 0}, format="json").data["error"])
+        self.assertIn("future", self.ad.post("/api/batches", {"start": 1, "end": 5, "print_date": "2099-01-01"}, format="json").data["error"])
+        self.assertIn("valid date", self.ad.post("/api/batches", {"start": 1, "end": 5, "print_date": "24/11/2026"}, format="json").data["error"])
+
+    def test_visitor_only_once_ever_and_inline_day1(self):
+        i1 = self.issue(self.ow, self.ravi, 1).data
+        r = self.ow.post("/api/visits", {"issue": i1["id"], "visitor_mobile": "9701100223", "visitor_name": "Kavya", "day1": True}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertTrue(r.data["day1"])
+        i2 = self.issue(self.ow, self.suresh, 2).data
+        owb = self.as_(self.owner_b)
+        r = self.ow.post("/api/visits", {"issue": i2["id"], "visitor_mobile": "9701100223", "visitor_name": "Kavya"}, format="json")
+        self.assertIn("only once", r.data["error"])
+        r = self.ow.post("/api/visits", {"issue": i2["id"], "visitor_mobile": "9848012345", "visitor_name": "x"}, format="json")
+        self.assertIn("already had a trial", r.data["error"])    # Ravi started a trial with coupon #1
+        d = self.ow.get("/api/desk?number=1").data
+        self.assertEqual((d["state"], d["can_d2"]), ("d1", False))
+        self.assertEqual(self.ow.get("/api/desk?number=2").data["state"], "waiting")
+        self.assertEqual(self.ow.get("/api/desk?number=3").data["state"], "stock")
+        self.assertEqual(owb.get("/api/desk?number=3").data["state"], "other")
+        self.assertEqual(self.ow.get("/api/desk?number=999").data["state"], "missing")
+
+    def test_issue_with_new_customer_inline(self):
+        r = self.ow.post("/api/issues", {"new_customer": {"name": "Meena", "mobile": "9010022334"}, "coach": self.coach.id,
+                                         "unit": self.unit(self.b["code"], 5), "purpose": "TRIAL"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["customer_name"], "Meena")
+
+    def test_trial_days_in_order_and_weekly_rules(self):
+        t = self.ow.post("/api/trials", {"customer": self.ravi}, format="json").data
+        self.assertIn("in order", self.ow.patch(f"/api/trials/{t['id']}", {"days": [0, 1, 0]}, format="json").data["error"])
+        self.ow.patch(f"/api/trials/{t['id']}", {"days": [1, 1, 1]}, format="json")
+        self.ow.post("/api/cvc", {"customer": self.ravi, "start_date": timezone.localdate().isoformat()}, format="json")
+        bad = self.ow.post("/api/weekly", {"customer": self.ravi, "weight": 900}, format="json")
+        self.assertIn("between", bad.data["error"])
+        self.assertIn("future", self.ow.post("/api/weekly", {"customer": self.ravi, "weight": 70, "week_start": "2099-01-05"}, format="json").data["error"])
+        w = self.ow.post("/api/weekly", {"customer": self.ravi, "weight": 70.5}, format="json").data
+        self.assertEqual(self.ow.post(f"/api/weekly/{w['id']}/approve").status_code, 200)
+        self.assertIn("already approved", self.ow.post("/api/weekly", {"customer": self.ravi, "weight": 69}, format="json").data["error"])
+        self.assertIn("future", self.ow.post("/api/customers", {"name": "Baby", "mobile": "9123123123", "dob": "2099-01-01"}, format="json").data["error"])
+
+    def test_coach_duplicates(self):
+        up = {"upline_name": "U", "upline_mobile": "9848143809", "upline_herbalife_id": "W2"}
+        self.assertEqual(self.ow.post("/api/coaches", {"name": "A", "mobile": "9555500001", "herbalife_id": "W77", **up}, format="json").status_code, 201)
+        self.assertIn("already uses mobile", self.ow.post("/api/coaches", {"name": "B", "mobile": "9555500001", "herbalife_id": "W78", **up}, format="json").data["error"])
+        self.assertIn("Herbalife ID", self.ow.post("/api/coaches", {"name": "B", "mobile": "9555500002", "herbalife_id": "w77", **up}, format="json").data["error"])
+
+    def test_super_admin_as_owner(self):
+        c = APIClient()
+        self.assertEqual(c.post("/api/auth/login", {"username": "giri", "password": "Strong#Pass1", "portal": "club"}, format="json").status_code, 409)
+        self.ad.patch(f"/api/clubs/{self.a.id}", {"admin_owner": self.admin.id}, format="json")
+        cache.clear()
+        r = c.post("/api/auth/login", {"username": "giri", "password": "Strong#Pass1", "portal": "club"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["user"]["owned_clubs"][0]["id"], self.a.id)
+        ad = self.as_(self.admin)          # logging in again ends the earlier session
+        self.assertIn("Super Admin", ad.patch(f"/api/clubs/{self.a.id}", {"admin_owner": self.owner.id}, format="json").data["error"])
+
+    def test_take_back_unused(self):
+        self.issue(self.ow, self.ravi, 1)
+        a = Allocation.objects.get(club=self.a)
+        r = self.ad.post(f"/api/allocations/{a.id}/return")
+        self.assertEqual(r.data["returned"], 49)
+        self.assertEqual(CouponUnit.objects.filter(club=self.a, status="ALLOCATED").count(), 0)
+        self.assertEqual(self.ow.post(f"/api/allocations/{a.id}/return").status_code, 403)
+
+    def test_lists_search_and_dashboards(self):
+        i1 = self.issue(self.ow, self.ravi, 1).data
+        self.ow.post("/api/visits", {"issue": i1["id"], "visitor": self.suresh, "day1": True}, format="json")
+        r = self.ow.get("/api/list/customers?stage=Visitor").data
+        self.assertEqual([x["name"] for x in r["results"]], ["Suresh"])
+        self.assertEqual(r["counts"]["In trial"], 1)
+        r = self.ow.get("/api/list/referrals?status=Day 1 done").data
+        self.assertEqual(r["total"], 1)
+        self.assertEqual(self.ow.get("/api/list/coaches").data["results"][0]["issued"], 1)
+        s = self.ow.get("/api/search?q=9848").data
+        self.assertEqual(s["customers"][0]["name"], "Ravi")
+        self.assertEqual(self.ow.get("/api/search?q=%231").data["referrals"][0]["number"], 1)
+        self.assertEqual(self.as_(self.owner_b).get("/api/search?q=Ravi").data["counts"]["customers"], 0)
+        for rng in ("today", "d7", "d30", "month", "all"):
+            dsh = self.ow.get(f"/api/dash?range={rng}").data
+            self.assertEqual(dsh["kpis"]["issued"], 1)
+        self.assertIn("today", dsh)
+        adm = self.ad.get("/api/dash?range=d30").data
+        self.assertIn("attention", adm)
+        self.assertEqual(sum(c["issued"] for c in adm["clubs"]), 1)
+        self.assertEqual(self.sp.get("/api/dash").status_code, 403)
 
 
 class AccountTests(Base):

@@ -1,5 +1,6 @@
 from django.urls import path
 
+from . import v2
 from . import views as v
 
 urlpatterns = [
@@ -18,5 +19,7 @@ urlpatterns = [
     path("visits", v.visits), path("redemptions", v.redemptions), path("redemptions/<int:pk>/void", v.redemption_void),
     path("dashboard", v.dashboard), path("referral-tree", v.referral_tree), path("export.csv", v.export_csv),
     path("audit", v.audit_log), path("import", v.import_excel), path("import/template", v.import_template),
-    path("users/<int:pk>/reset", v.user_reset),
+    path("users/<int:pk>/reset", v.user_reset), path("allocations/<int:pk>/return", v.allocation_return),
+    path("desk", v2.desk), path("search", v2.search), path("dash", v2.dash),
+    path("list/customers", v2.customer_list), path("list/referrals", v2.referral_list), path("list/coaches", v2.coach_list),
 ]

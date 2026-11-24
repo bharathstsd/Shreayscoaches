@@ -1,36 +1,28 @@
 import { useState } from "react";
 import { api } from "../api";
-import { Dashboard } from "./Dashboard";
-import { greet } from "./Admin";
 import { daysAgo, Empty, Field, fmtDate, Icon, Kv, Loading, Sheet, today, useAction, useLoad } from "../ui";
 
-export function OwnerHome({ ctx }) {
-  return <Dashboard ctx={ctx} greeting={`Good ${greet()}, ${ctx.user.first_name || ctx.user.username}`} />;
-}
-
 export function Launch({ ctx }) {
-  const tiles = [["coupon", "Issue coupon", "issue"], ["door", "Register visitor", "visits"], ["check", "Redeem Day 1 / 2", "visits/redeem"],
-    ["users", "Customers", "customers"], ["trial", "3-day trials", "trials"], ["star", "CVC conversion", "cvc"]];
+  const tiles = [["desk", "Coupon desk", "desk"], ["users", "Customers", "customers"], ["ref", "Referrals", "referrals"],
+    ["trial", "3-day trials", "trials"], ["star", "CVC conversion", "cvc"], ["award", "Weekly results", "weekly"]];
   return (
-    <>
-      <div><p className="h2">Good {greet()}, {ctx.user.first_name || ctx.user.username}</p><p className="muted">What would you like to record?</p></div>
-      <div className="tiles">
-        {tiles.map(([ic, label, to]) => (
-          <button key={label} className="tile" onClick={() => { const [n, a] = to.split("/"); ctx.go(n, a); }}><span className="ic"><Icon name={ic} /></span><b>{label}</b></button>
-        ))}
-      </div>
-      <div className="banner info">Dashboards and conversion reports are for the Club Owner and Super Admin. You can edit or delete only the entries you made yourself.</div>
-    </>
+    <div className="tiles">
+      {tiles.map(([ic, label, to]) => (
+        <button key={label} className="tile" onClick={() => ctx.go(to)}><span className="ic"><Icon name={ic} /></span><b>{label}</b></button>
+      ))}
+    </div>
   );
 }
 
 export function More({ ctx }) {
-  const items = [
-    ...(ctx.isAdmin ? [["users", "customers", "Customers", "Club records"], ["coupon", "issue", "Issue coupon", "From the selected club's stock"], ["door", "visits", "Visitors & redemption", "Register and redeem"]] : []),
+  const items = ctx.inClub ? [
     ["trial", "trials", "3-day trials", "Attendance for each day"], ["star", "cvc", "CVC membership", "Convert trial finishers"],
-    ["award", "weekly", "Weekly results & awards", "Checkups and Best Results"], ["coach", "coaches", "Wellness coaches", ctx.role === "SUPERVISOR" ? "View only" : "Add and edit coaches"],
+    ["award", "weekly", "Weekly results & awards", "Check-ups and Best Results"],
+    ["coach", "coaches", "Wellness coaches", ctx.role === "SUPERVISOR" ? "View only" : "Add, edit and rank coaches"],
     ...(ctx.role !== "SUPERVISOR" ? [["tree", "tree", "Referral trees", "Who referred whom"]] : []),
-    ...(ctx.isAdmin ? [["upload", "import", "Import from Excel", "Clubs, Club Owners and coaches"], ["log", "audit", "Activity log", "Logins and every change"]] : []),
+    ["key", "password", "Change my password", "For your own account only"],
+  ] : [
+    ["upload", "import", "Import from Excel", "Clubs, Club Owners and coaches"], ["log", "audit", "Activity log", "Logins and every change"],
     ["key", "password", "Change my password", "For your own account only"],
   ];
   return (
@@ -186,7 +178,7 @@ export function Weekly({ ctx }) {
   );
 }
 
-export function CoachForm({ ctx, coach, onClose, onSaved }) {
+export function CoachForm({ ctx, coach, onClose, onSaved, extra }) {
   const [f, setF] = useState(coach ? { ...coach, upline_name: coach.upline_name || "", upline_mobile: coach.upline_mobile || "", upline_herbalife_id: coach.upline_herbalife_id || "" }
     : { name: "", mobile: "", herbalife_id: "", upline_name: "", upline_mobile: "", upline_herbalife_id: "" });
   const [run, busy] = useAction();
@@ -204,6 +196,7 @@ export function CoachForm({ ctx, coach, onClose, onSaved }) {
         <p className="lbl" style={{ marginTop: 4 }}>Upline / sponsor</p>
         <Field label="Upline name" id="kun" value={f.upline_name} onChange={set("upline_name")} required />
         <div className="btns"><Field label="Upline mobile" id="kum" value={f.upline_mobile} onChange={set("upline_mobile")} inputMode="numeric" required /><Field label="Upline Herbalife ID" id="kuh" value={f.upline_herbalife_id} onChange={set("upline_herbalife_id")} required /></div>
+        {extra}
         <div className="btns"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy}>Save</button></div>
       </form>
     </Sheet>

@@ -27,6 +27,37 @@ def text(data, key, required=True, label=None, max_len=255):
     return v[:max_len]
 
 
+def parse_date(value, label, required=True, not_future=False, min_date=None):
+    """Turn "2026-11-24" into a date, with a clear message instead of a server error."""
+    from datetime import date
+    v = str(value or "").strip()
+    if not v:
+        if required:
+            raise Rule(f"Choose the {label}.")
+        return None
+    try:
+        dt = date.fromisoformat(v[:10])
+    except ValueError:
+        raise Rule(f"The {label} isn't a valid date.")
+    if not_future and dt > timezone.localdate():
+        raise Rule(f"The {label} can't be in the future.")
+    if min_date and dt < min_date:
+        raise Rule(f"The {label} is too far in the past.")
+    return dt
+
+
+def number(value, label, lo, hi):
+    if value in (None, ""):
+        return None
+    try:
+        n = round(float(value), 1)
+    except (TypeError, ValueError):
+        raise Rule(f"{label} must be a number.")
+    if not lo <= n <= hi:
+        raise Rule(f"{label} should be between {lo:g} and {hi:g}.")
+    return n
+
+
 # ---------- scope ----------
 def read_club(request):
     """Club to read from. Staff: always their own. Admin: ?club=<id> or None (all clubs)."""
@@ -144,7 +175,8 @@ def d(v):
 
 def club_json(c, stats=None):
     out = {"id": c.id, "name": c.name, "city": c.city, "state": c.state, "address": c.address, "pincode": c.pincode,
-           "owner_name": c.owner_name, "owner_mobile": c.owner_mobile, "is_active": c.is_active}
+           "owner_name": c.owner_name, "owner_mobile": c.owner_mobile, "is_active": c.is_active,
+           "admin_owner": c.admin_owner_id, "admin_owner_name": (c.admin_owner.get_full_name() or c.admin_owner.username) if c.admin_owner_id else None}
     if stats is not None:
         out.update(stats)
     return out
@@ -155,7 +187,8 @@ def user_json(u):
             "last_name": u.last_name, "role": u.role, "mobile": u.mobile, "herbalife_id": u.herbalife_id,
             "club": u.club_id, "club_name": u.club.name if u.club else None, "is_active": u.is_active,
             "upline_name": u.upline_name, "upline_mobile": u.upline_mobile, "upline_herbalife_id": u.upline_herbalife_id,
-            "must_change_password": u.must_change_password}
+            "must_change_password": u.must_change_password,
+            "owned_clubs": [{"id": c.id, "name": c.name, "city": c.city} for c in u.admin_clubs.filter(is_active=True)] if u.role == "ADMIN" else []}
 
 
 def coach_json(c):
@@ -207,7 +240,10 @@ def stage(c):
         return "Trial done"
     if trial:
         return "In trial"
-    return "New"
+    vis = getattr(c, "is_visitor", None)
+    if vis is None:
+        vis = c.visits.exists()
+    return "Visitor" if vis else "New"
 
 
 def customer_json(c, full=False):
@@ -229,13 +265,28 @@ def trial_json(t):
             "created_by": t.created_by_id, "club": t.club_id}
 
 
+def issue_status(i, v=None):
+    if v is None:
+        v = i.visit if hasattr(i, "visit") else None
+    if v:
+        days = {r.day for r in v.redemptions.all() if not r.is_void}
+        if 2 in days:
+            return "Day 2 done"
+        if 1 in days:
+            return "Expired" if i.is_expired else "Day 1 done"
+        return "Expired" if i.is_expired else "Friend registered"
+    if i.is_paused:
+        return "Paused"
+    return "Expired" if i.is_expired else "Waiting"
+
+
 def issue_json(i):
     v = getattr(i, "visit", None) if hasattr(i, "visit") else None
     return {"id": i.id, "coupon": i.unit.label(), "batch": i.unit.batch.code, "number": i.unit.number,
             "customer": i.customer_id, "customer_name": i.customer.name, "customer_mobile": i.customer.mobile, "purpose": i.purpose,
             "purpose_label": i.get_purpose_display(), "coach_name": i.coach.name, "issued_at": d(i.created_at),
             "is_paused": i.is_paused, "visitor_name": v.visitor.name if v else None, "club": i.club_id,
-            "created_by": i.created_by_id}
+            "created_by": i.created_by_id, "expires_on": d(i.expires_on), "status": issue_status(i, v)}
 
 
 def visit_json(v):
