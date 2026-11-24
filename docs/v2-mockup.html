@@ -1,0 +1,821 @@
+<title>Shreyas Coupons v2</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@400;500;600&display=swap">
+<style>
+/* Layout: mockup bar on top, then the app shell — sidebar on wide screens, header + bottom tabs when narrow (container queries, so the phone frame switches too). Single light look, matching the live app. */
+:root{
+  --emerald:#0F3B32; --emerald-2:#1D5C4C; --mint:#EAF3EE; --ivory:#F5F2EA; --paper:#FFFFFF;
+  --ink:#18241F; --muted:#66746E; --faint:#A3ACA6; --line:#E6E1D6; --line-2:#EFEBE2;
+  --gold:#B48A2C; --gold-soft:#F5ECD6; --gold-ink:#6E5212; --gold-hi:#D9B865;
+  --good:#2F7D5B; --good-soft:#E3F1E9; --warn:#9A6A12; --warn-soft:#F8EDD3; --bad:#9B3530; --bad-soft:#F7E3E1;
+  --display:'Cormorant Garamond',Georgia,'Times New Roman',serif; --body:Jost,'Segoe UI',system-ui,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:#E9E5DB;color:var(--ink);font:400 15px/1.45 var(--body)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- mockup bar ---------- */
+.mbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;
+  padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:#1B2622;color:#DDE6E1;font-size:13px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:21;background:#1B2622}
+.mbar b{color:#fff;font-weight:600;letter-spacing:.02em}
+.mbar .grp{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.seg2{display:inline-flex;background:#2A3832;border-radius:999px;padding:3px}
+.seg2 button{border:0;background:transparent;color:#C9D4CE;padding:5px 12px;border-radius:999px;font-size:12.5px}
+.seg2 button.on{background:var(--gold-hi);color:#1B2622;font-weight:600}
+.stagewrap{padding-block:18px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;justify-content:center}
+.frame{width:100%;max-width:1360px;height:min(860px,calc(100vh - 110px));min-height:620px;border-radius:18px;overflow:hidden;box-shadow:0 18px 50px rgba(20,30,26,.18);background:var(--ivory)}
+.frame.phone{max-width:392px;height:min(820px,calc(100vh - 110px));border-radius:34px;border:10px solid #1B2622}
+
+/* ---------- app shell ---------- */
+.app{container-type:inline-size;container-name:app;height:100%;display:flex;flex-direction:column;background:var(--ivory);position:relative}
+.top{display:flex;align-items:center;gap:12px;padding:12px 18px;background:var(--paper);border-bottom:1px solid var(--line);min-height:62px}
+.logo{display:flex;align-items:center;gap:8px;font:600 13px var(--body);letter-spacing:.24em;color:var(--emerald)}
+.logo svg{flex:none}
+.top .sp{flex:1}
+.ws{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--ivory);border-radius:999px;padding:5px 12px 5px 6px;min-width:0}
+.ws .dot{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none;font:600 12px var(--body)}
+.ws .dot.admin{background:var(--emerald);color:var(--gold-hi)}
+.ws .dot.club{background:var(--gold-soft);color:var(--gold-ink)}
+.ws span.t{display:flex;flex-direction:column;line-height:1.15;text-align:left;min-width:0}
+.ws span.t b{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws span.t i{font-style:normal;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--emerald);color:#fff;display:flex;align-items:center;justify-content:center;font:600 13px var(--body);flex:none;border:0}
+.menu{position:absolute;top:58px;left:18px;z-index:30;width:min(340px,calc(100% - 36px));background:var(--paper);border:1px solid var(--line);border-radius:16px;box-shadow:0 16px 40px rgba(20,30,26,.16);padding:8px}
+.menu .h{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:10px 10px 4px}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;border-radius:10px;padding:9px 10px;text-align:left}
+.menu button:hover,.menu button.on{background:var(--ivory)}
+.menu button .t{flex:1;display:flex;flex-direction:column;line-height:1.2}
+.menu button .t i{font-style:normal;font-size:12px;color:var(--muted)}
+.body{flex:1;display:flex;min-height:0}
+.side{display:none;flex-direction:column;gap:2px;width:228px;flex:none;padding:16px 12px;border-right:1px solid var(--line);background:var(--paper);overflow-y:auto}
+.side .sub{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:14px 10px 4px}
+.navb{display:flex;align-items:center;gap:12px;border:0;background:transparent;border-radius:10px;padding:9px 12px;color:var(--muted);font-size:14.5px;text-align:left;width:100%}
+.navb:hover{background:var(--ivory);color:var(--ink)}
+.navb.on{background:var(--mint);color:var(--emerald);font-weight:500}
+.main{flex:1;overflow-y:auto;min-width:0}
+.content{max-width:1120px;margin:0 auto;padding:22px 18px 96px;display:flex;flex-direction:column;gap:18px}
+.tabs{position:absolute;left:0;right:0;bottom:0;display:flex;background:var(--paper);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px))}
+.tabs .navb{flex-direction:column;gap:3px;font-size:11px;padding:6px 2px;align-items:center;justify-content:center}
+.tabs .navb.on{background:transparent;color:var(--emerald)}
+.tabs .navb span{white-space:nowrap;font-size:10.5px}
+.ws-label{display:none}
+@container app (min-width:900px){
+  .side{display:flex}
+  .tabs{display:none}
+  .content{padding:30px 34px 40px;gap:22px}
+  .ws-label{display:inline}
+}
+@container app (max-width:560px){
+  .logo span{display:none}
+  .top{padding:10px 12px;gap:8px}
+}
+
+/* ---------- type & atoms ---------- */
+.eyebrow{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0}
+h1.pg{font:600 34px/1.05 var(--display);margin:2px 0 0;color:var(--emerald);text-wrap:balance}
+h2.sec{font:600 22px/1.1 var(--display);margin:0;color:var(--ink)}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:6px 13px;font-size:13px;color:var(--muted)}
+.chip.on{background:var(--emerald);border-color:var(--emerald);color:#fff}
+.btn{border:0;background:var(--emerald);color:#fff;border-radius:12px;padding:11px 18px;font-weight:500;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn:disabled{background:#B9C3BE;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--emerald);border:1px solid var(--line)}
+.btn.gold{background:var(--gold);color:#fff}
+.btn.block{width:100%}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.grid2{display:grid;grid-template-columns:1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:1fr;gap:18px}
+@container app (min-width:900px){
+  .grid2{grid-template-columns:1.25fr 1fr}
+  .grid3{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:500;white-space:nowrap}
+.pill.good{background:var(--good-soft);color:var(--good)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.grey{background:var(--line-2);color:var(--muted)}
+.pill.gold{background:var(--gold-soft);color:var(--gold-ink)}
+.inp{width:100%;min-height:46px;border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:var(--paper);font-size:15px}
+.inp:focus{outline:2px solid var(--gold);outline-offset:0;border-color:transparent}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);min-width:0;flex:1}
+.row2{display:flex;gap:10px;flex-wrap:wrap}
+.note{display:flex;gap:10px;align-items:flex-start;background:var(--gold-soft);color:var(--gold-ink);border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.45}
+.note::before{content:"NEW";flex:none;font:600 9.5px var(--body);letter-spacing:.14em;background:var(--gold);color:#fff;border-radius:5px;padding:3px 6px;margin-top:1px}
+.hide-notes .note{display:none}
+.msg{border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.45}
+.msg.bad{background:var(--bad-soft);color:var(--bad)}
+.msg.good{background:var(--good-soft);color:var(--good)}
+.msg.warn{background:var(--warn-soft);color:var(--warn)}
+.msg.info{background:var(--line-2);color:var(--ink)}
+
+/* ---------- KPI ---------- */
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+@container app (min-width:900px){.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.kpi{background:var(--paper);padding:18px 18px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.kpi .l{font-size:12.5px;color:var(--muted)}
+.kpi .v{font:600 44px/1 var(--display);color:var(--emerald);font-variant-numeric:lining-nums tabular-nums}
+.kpi .d{font-size:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.up{color:var(--good)} .down{color:var(--bad)}
+.kpi svg{width:100%;height:34px;margin-top:4px}
+
+/* ---------- attention ---------- */
+.att{display:grid;grid-template-columns:1fr;gap:10px}
+@container app (min-width:900px){.att{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.attc{display:flex;gap:12px;align-items:flex-start;background:var(--paper);border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:14px;padding:12px 14px;text-align:left}
+.attc.bad{border-left-color:var(--bad)}
+.attc.info{border-left-color:var(--emerald-2)}
+.attc b{display:block;font-weight:600;font-size:14px}
+.attc span{font-size:12.5px;color:var(--muted)}
+
+/* ---------- funnel ---------- */
+.fun{display:flex;flex-direction:column;gap:10px}
+.fun .r{display:grid;grid-template-columns:minmax(110px,150px) 1fr 52px;gap:12px;align-items:center;font-size:13.5px}
+.fun .bar{height:10px;border-radius:999px;background:var(--line-2);overflow:hidden}
+.fun .bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--emerald),var(--emerald-2))}
+.fun .r.cv .bar i{background:linear-gradient(90deg,var(--gold),var(--gold-hi))}
+.fun .n{text-align:right;font-weight:600}
+.fun .p{color:var(--faint);font-weight:400;font-size:11.5px;display:block}
+
+/* ---------- table ---------- */
+.tw{overflow-x:auto;margin:0 -4px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 10px;border-bottom:1px solid var(--line-2);vertical-align:middle;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.mb{display:flex;align-items:center;gap:8px;min-width:120px}
+.mb .bar{flex:1;height:6px;border-radius:999px;background:var(--line-2);overflow:hidden;min-width:60px}
+.mb .bar i{display:block;height:100%;background:var(--gold)}
+.rank{width:24px;height:24px;border-radius:50%;background:var(--ivory);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--muted)}
+.rank.g{background:var(--gold-soft);color:var(--gold-ink)}
+
+/* ---------- coupon desk ---------- */
+.desk{background:var(--emerald);color:#fff;border-radius:22px;padding:22px;display:flex;flex-direction:column;gap:14px;position:relative;overflow:hidden}
+.desk::after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;border:1px solid rgba(217,184,101,.25)}
+.desk .eyebrow{color:var(--gold-hi)}
+.desk h2{font:600 28px/1.1 var(--display);margin:0;text-wrap:balance}
+.deskin{display:flex;gap:10px;position:relative;z-index:1}
+.deskin .pre{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:0 10px;flex:1;min-width:0}
+.deskin .pre span{font:600 22px var(--display);color:var(--gold-hi)}
+.deskin input{flex:1;min-width:0;border:0;background:transparent;color:#fff;font:500 22px var(--body);padding:12px 0;letter-spacing:.04em}
+.deskin input::placeholder{color:rgba(255,255,255,.45);font-size:16px;letter-spacing:0}
+.deskin input:focus{outline:none}
+.deskin .btn{background:var(--gold-hi);color:var(--emerald);font-weight:600;flex:none}
+.try{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:rgba(255,255,255,.65);position:relative;z-index:1}
+.try button{border:1px solid rgba(255,255,255,.22);background:transparent;color:#fff;border-radius:999px;padding:4px 10px;font-size:12px}
+.try button:hover{background:rgba(255,255,255,.1)}
+.result{display:flex;flex-direction:column;gap:14px}
+.coupon{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.ctk{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:92px;padding:10px 12px;border-radius:12px;border:1.5px dashed var(--gold);background:var(--gold-soft);color:var(--gold-ink)}
+.ctk b{font:600 30px/1 var(--display)}
+.ctk i{font-style:normal;font-size:11px;letter-spacing:.1em}
+.steps{display:flex;gap:6px;flex-wrap:wrap}
+.step{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--faint)}
+.step .c{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600}
+.step.done{color:var(--good)} .step.done .c{background:var(--good);border-color:var(--good);color:#fff}
+.step.now{color:var(--ink);font-weight:500} .step.now .c{border-color:var(--gold);color:var(--gold-ink);background:var(--gold-soft)}
+.step + .step::before{content:"";width:14px;height:1.5px;background:var(--line)}
+.pick{display:flex;flex-direction:column;gap:6px}
+.pick button{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--paper);border-radius:12px;padding:10px 12px;text-align:left}
+.pick button.on{border-color:var(--emerald);background:var(--mint)}
+.pick button:disabled{opacity:.55;cursor:not-allowed}
+.pick button .t{flex:1;display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.pick button .t i{font-style:normal;font-size:12px;color:var(--muted)}
+
+/* ---------- today ---------- */
+.today{display:flex;flex-direction:column}
+.td{display:flex;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line-2)}
+.td:last-child{border-bottom:0}
+.td .ic{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
+.td .ic.g{background:var(--mint);color:var(--emerald)} .td .ic.y{background:var(--gold-soft);color:var(--gold-ink)} .td .ic.r{background:var(--bad-soft);color:var(--bad)}
+.td .t{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.td .t i{font-style:normal;font-size:12.5px;color:var(--muted)}
+.td button{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:6px 12px;font-size:12.5px;color:var(--emerald);font-weight:500;flex:none}
+
+/* gauge */
+.gauge{display:flex;align-items:center;gap:18px}
+.gauge svg{flex:none}
+.gauge .big{font:600 40px/1 var(--display);color:var(--emerald)}
+
+/* checklist */
+.check{display:flex;flex-direction:column;gap:2px}
+.ck{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line-2)}
+.ck:last-child{border-bottom:0}
+.ck .c{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line);flex:none;display:flex;align-items:center;justify-content:center}
+.ck.done .c{background:var(--good);border-color:var(--good);color:#fff}
+.ck .t{flex:1;display:flex;flex-direction:column;line-height:1.25}
+.ck .t i{font-style:normal;font-size:12.5px;color:var(--muted)}
+.ck.done .t b{text-decoration:line-through;color:var(--muted);font-weight:500}
+.progress{height:6px;border-radius:999px;background:var(--line-2);overflow:hidden}
+.progress i{display:block;height:100%;background:var(--gold)}
+
+/* login */
+.login{flex:1;display:grid;grid-template-columns:1fr;overflow-y:auto}
+@container app (min-width:900px){.login{grid-template-columns:1.1fr 1fr}}
+.lbrand{background:var(--emerald);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:12px;padding:40px 36px}
+.lbrand .eyebrow{color:var(--gold-hi)}
+.lbrand h1{font:600 clamp(34px,6cqi,58px)/1 var(--display);margin:0;text-wrap:balance}
+.lbrand p{margin:0;color:#C8DAD2;max-width:38ch}
+.lform{display:flex;align-items:center;justify-content:center;padding:28px 22px}
+.lform form{width:100%;max-width:380px;display:flex;flex-direction:column;gap:14px}
+.segl{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:14px;background:var(--line-2)}
+.segl button{border:0;background:transparent;border-radius:10px;min-height:40px;color:var(--muted);font-weight:500}
+.segl button.on{background:var(--paper);color:var(--emerald);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+
+/* sheet */
+.sheetbg{position:absolute;inset:0;background:rgba(15,25,21,.38);display:flex;align-items:flex-end;justify-content:center;z-index:40}
+@container app (min-width:900px){.sheetbg{align-items:center}}
+.sheet{background:var(--paper);width:100%;max-width:520px;max-height:90%;overflow-y:auto;border-radius:22px 22px 0 0;padding:22px;display:flex;flex-direction:column;gap:14px}
+@container app (min-width:900px){.sheet{border-radius:22px}}
+/* search & filters */
+.sbtn{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--ivory);border-radius:12px;padding:8px 12px;color:var(--muted);min-width:0;flex:0 1 340px;text-align:left;font-size:14px}
+.sbtn kbd{margin-left:auto;font:500 11px var(--body);border:1px solid var(--line);border-radius:6px;padding:1px 6px;background:var(--paper)}
+.sbtn .lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@container app (max-width:700px){.sbtn{flex:none;width:40px;height:40px;padding:0;justify-content:center;border-radius:50%}.sbtn .lbl,.sbtn kbd{display:none}}
+.sover{position:absolute;inset:0;z-index:45;background:rgba(15,25,21,.38);display:flex;justify-content:center;align-items:flex-start;padding:70px 14px 14px}
+.sbox{width:100%;max-width:640px;max-height:100%;background:var(--paper);border-radius:18px;box-shadow:0 20px 50px rgba(15,25,21,.25);display:flex;flex-direction:column;overflow:hidden}
+.sbox .in{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.sbox .in input{flex:1;border:0;font-size:17px;padding:6px 0;background:transparent;min-width:0}
+.sbox .in input:focus{outline:none}
+.sbox .scope{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line-2)}
+.sres{overflow-y:auto;padding:6px 8px 12px}
+.sres .h{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:12px 8px 4px;display:flex;justify-content:space-between}
+.hit{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;border-radius:10px;padding:9px 8px;text-align:left}
+.hit:hover{background:var(--ivory)}
+.hit .av{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;background:var(--mint);color:var(--emerald)}
+.hit .av.r{background:var(--gold-soft);color:var(--gold-ink);border-radius:9px}
+.hit .av.c{background:var(--line-2);color:var(--muted)}
+.hit .t{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.hit .t i{font-style:normal;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+mark{background:var(--gold-soft);color:inherit;border-radius:3px;padding:0 1px}
+.fbar{display:flex;flex-direction:column;gap:10px}
+.fbar .top2{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.sinp{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--paper);border-radius:12px;padding:0 12px;flex:1 1 260px;min-width:0}
+.sinp input{border:0;background:transparent;flex:1;min-width:0;padding:11px 0;font-size:15px}
+.sinp input:focus{outline:none}
+.sel{min-height:44px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:var(--paper);font-size:14px;color:var(--ink)}
+.fchips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.fchips .chip{flex:none}
+.chip .n{opacity:.6;margin-left:4px;font-variant-numeric:tabular-nums}
+.chip.on .n{opacity:.8}
+.applied{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px;color:var(--muted)}
+.applied .x{border:1px solid var(--line);background:var(--ivory);border-radius:999px;padding:3px 6px 3px 10px;display:inline-flex;gap:6px;align-items:center;font-size:12.5px;color:var(--ink)}
+.applied .x b{font-weight:400;color:var(--muted)}
+.linkb{border:0;background:transparent;color:var(--emerald);text-decoration:underline;font-size:12.5px;padding:2px}
+.cards{display:none;flex-direction:column;gap:8px}
+@container app (max-width:700px){.cards{display:flex}.tblonly{display:none}}
+.pc{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;gap:12px;align-items:center}
+.pc .t{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
+.pc .t i{font-style:normal;font-size:12.5px;color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:30px 10px;display:flex;flex-direction:column;gap:8px;align-items:center}
+.placeholder{border:1.5px dashed var(--line);border-radius:18px;padding:40px 24px;text-align:center;color:var(--muted);display:flex;flex-direction:column;gap:8px;align-items:center}
+</style>
+
+<div class="mbar" role="region" aria-label="Mockup controls">
+  <div class="grp"><b>Shreyas Coupons · v2 mockup</b><span style="opacity:.7">Sample data. Nothing is saved.</span></div>
+  <div class="grp">
+    <div class="seg2" role="group" aria-label="Device"><button id="dLap" class="on" data-act="device" data-v="laptop">Laptop</button><button id="dPh" data-act="device" data-v="phone">Phone</button></div>
+    <div class="seg2" role="group" aria-label="Notes"><button id="nOn" class="on" data-act="notes" data-v="1">Show what's new</button><button id="nOff" data-act="notes" data-v="0">Hide</button></div>
+    <div class="seg2" role="group" aria-label="Jump"><button data-act="jump" data-v="login">Login</button><button data-act="jump" data-v="admin">Admin</button><button data-act="jump" data-v="club">My club</button><button data-act="jump" data-v="newclub">New club</button></div>
+  </div>
+</div>
+<div class="stagewrap"><div class="frame" id="frame"><div class="app" id="app"></div></div></div>
+
+<script>
+(function(){
+const IC = {
+  leaf:'<path d="M12 20c-4 0-8-3-9-7 4 0 7 2 9 7Zm0 0c4 0 8-3 9-7-4 0-7 2-9 7Zm0 0c-2-3-2-9 0-14 2 5 2 11 0 14Z"/>',
+  home:'<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  clubs:'<path d="M4 21V8l8-5 8 5v13M9 21v-6h6v6M3 21h18"/>',
+  coupon:'<path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/><path d="M14 6v12" stroke-dasharray="2 2"/>',
+  key:'<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3"/>',
+  users:'<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M16 4a4 4 0 0 1 0 8M22 21c0-3-2-5-4-5.5"/>',
+  upload:'<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
+  log:'<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>',
+  desk:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h4M7 14h7"/><circle cx="17" cy="12" r="1.6"/>',
+  trial:'<path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="m9 16 2 2 4-4"/>',
+  coach:'<circle cx="12" cy="7" r="4"/><path d="M5 21c0-4 3-7 7-7s7 3 7 7"/>',
+  chev:'<path d="m6 9 6 6 6-6"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  door:'<path d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>',
+  star:'<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+  alert:'<path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
+  scale:'<path d="M12 3v18M5 7h14M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/>',
+  swap:'<path d="M7 7h13l-3-3M17 17H4l3 3"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+};
+const ic=(n,s=20,c='currentColor',w=1.8)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const note=t=>`<div class="note"><span>${t}</span></div>`;
+
+/* ---------- sample data (30-day figures) ---------- */
+const CLUBS=[
+  {id:1,name:'Shreyas · Kadapa',city:'Kadapa',owner:'Giri Babu M S',mine:true,issued:96,visits:34,d2:25,trials:12,cvc:6,stock:184,days:0},
+  {id:2,name:'B Ravi Club',city:'Proddatur',owner:'B Ravi',issued:78,visits:27,d2:19,trials:9,cvc:4,stock:96,days:0},
+  {id:3,name:'Wellness Hub',city:'Rayachoty',owner:'Sumiya Begum',issued:64,visits:22,d2:15,trials:7,cvc:3,stock:12,days:1},
+  {id:4,name:'Fit Life Centre',city:'Badvel',owner:'K Srinivasulu',issued:58,visits:19,d2:12,trials:6,cvc:2,stock:140,days:0},
+  {id:5,name:'Nutri Point',city:'Mydukur',owner:'P Lakshmi',issued:46,visits:15,d2:9,trials:4,cvc:2,stock:72,days:2},
+  {id:6,name:'Health Zone',city:'Kamalapuram',owner:'Thana Gouse Azam',issued:40,visits:11,d2:6,trials:3,cvc:0,stock:58,days:9},
+  {id:7,name:'Pulivendula Club',city:'Pulivendula',owner:'Ghori Noor Ahammad',fresh:true,issued:0,visits:0,d2:0,trials:0,cvc:0,stock:0,days:0},
+];
+const RANGES={today:['Today',.04],d7:['7 days',.26],d30:['30 days',1],month:['This month',.78],all:['All time',3.4]};
+const DELTA={today:[12,8,0,0],d7:[18,22,9,14],d30:[14,19,11,21],month:[9,12,6,17],all:[0,0,0,0]};
+const SPARK={visits:[3,5,4,6,5,7,6,8,7,9,8,11],d2:[2,3,3,4,4,5,5,6,5,7,7,8],trials:[1,1,2,1,2,2,3,2,3,3,4,4],cvc:[0,1,0,1,1,1,1,2,1,2,2,3]};
+const COACHES=[
+  {n:'Prasanthi Reddy',id:'W0000001',issued:31,trials:6,cvc:4},
+  {n:'Lakshmi N',id:'W2213340',issued:24,trials:3,cvc:1},
+  {n:'Mahesh Kumar',id:'W3051998',issued:22,trials:2,cvc:1},
+  {n:'Anjali T',id:'W1987002',issued:19,trials:1,cvc:0},
+];
+
+/* ---------- people for search & lists ---------- */
+const CUST=[
+  ['Lakshmi Devi','9848011223','CVC member','Prasanthi Reddy','Shreyas · Kadapa','02 Sep',7],
+  ['Ramesh Naidu','9440012345','In trial','Prasanthi Reddy','Shreyas · Kadapa','10 Nov',4],
+  ['Padma S','9701122334','CVC member','Lakshmi N','Shreyas · Kadapa','15 Aug',3],
+  ['Venkat Rao','9866033445','Trial done','Mahesh Kumar','B Ravi Club','28 Oct',5],
+  ['Anitha P','9963044118','In trial','Lakshmi N','Shreyas · Kadapa','05 Nov',0],
+  ['Sravani K','9000233456','Visitor','Prasanthi Reddy','Shreyas · Kadapa','24 Nov',0],
+  ['Kavya Reddy','9391155667','Visitor','Anjali T','Shreyas · Kadapa','23 Nov',0],
+  ['Meena Kumari','9010022334','New','Prasanthi Reddy','Shreyas · Kadapa','21 Nov',0],
+  ['Hari K','9866610101','CVC member','Mahesh Kumar','Shreyas · Kadapa','30 Jul',2],
+  ['Suresh B','9989077881','New','Anjali T','Shreyas · Kadapa','19 Oct',1],
+  ['Divya S','9550012399','Visitor','Lakshmi N','Shreyas · Kadapa','20 Nov',0],
+  ['Ravi Teja','9177788990','Trial done','Prasanthi Reddy','Shreyas · Kadapa','12 Nov',0],
+  ['Bhavani M','9705566778','CVC member','Anjali T','Shreyas · Kadapa','01 Oct',2],
+  ['Naresh G','9848866554','New','Mahesh Kumar','Shreyas · Kadapa','22 Nov',0],
+].map(([n,m,st,co,cl,j,inv])=>({n,m,st,co,cl,j,inv}));
+const REF=[
+  ['PB-0002 #12','Lakshmi Devi','','Waiting','Prasanthi Reddy','18 Nov','18 Dec'],
+  ['PB-0001 #9','Padma S','Kavya Reddy','Day 1 done','Anjali T','12 Nov','12 Dec'],
+  ['PB-0001 #7','Ramesh Naidu','Sravani K','Day 1 done','Prasanthi Reddy','10 Nov','10 Dec'],
+  ['PB-0001 #3','Venkat Rao','Anitha P','Day 2 done','Lakshmi N','02 Nov','02 Dec'],
+  ['PB-0001 #41','Suresh B','','Expired','Anjali T','21 Oct','20 Nov'],
+  ['PB-0002 #18','Lakshmi Devi','Divya S','Day 1 done','Lakshmi N','14 Nov','14 Dec'],
+  ['PB-0001 #22','Hari K','Ravi Teja','Day 2 done','Prasanthi Reddy','01 Nov','01 Dec'],
+  ['PB-0002 #27','Bhavani M','','Waiting','Anjali T','20 Nov','20 Dec'],
+  ['PB-0001 #15','Lakshmi Devi','','Paused','Prasanthi Reddy','08 Nov','08 Dec'],
+  ['PB-0002 #30','Padma S','','Waiting','Lakshmi N','22 Nov','22 Dec'],
+].map(([c,h,v,st,co,is,ex])=>({c,h,v,st,co,is,ex}));
+const COACHL=[
+  {n:'Prasanthi Reddy',id:'W0000001',m:'9885529795',up:'Giri Babu M S',issued:31,trials:6,cvc:4,cust:42,active:true},
+  {n:'Lakshmi N',id:'W2213340',m:'9030045678',up:'Prasanthi Reddy',issued:24,trials:3,cvc:1,cust:28,active:true},
+  {n:'Mahesh Kumar',id:'W3051998',m:'9441234567',up:'Prasanthi Reddy',issued:22,trials:2,cvc:1,cust:19,active:true},
+  {n:'Anjali T',id:'W1987002',m:'9866012345',up:'Giri Babu M S',issued:19,trials:1,cvc:0,cust:15,active:true},
+  {n:'Siva Prasad',id:'W1765409',m:'9705123456',up:'Giri Babu M S',issued:6,trials:0,cvc:0,cust:4,active:false},
+];
+const STAGE_PILL={'New':'grey','Visitor':'gold','In trial':'warn','Trial done':'warn','CVC member':'good'};
+const REF_PILL={'Waiting':'gold','Day 1 done':'warn','Day 2 done':'good','Expired':'bad','Paused':'grey'};
+const fmtMob=m=>m.slice(0,5)+' '+m.slice(5);
+function hl(text,q){if(!q)return esc(text);const i=text.toLowerCase().indexOf(q.toLowerCase());if(i<0){const dq=q.replace(/\D/g,'');const dt=text.replace(/\D/g,'');if(dq&&dt.includes(dq)&&/\d/.test(text))return `<mark>${esc(text)}</mark>`;return esc(text)}return esc(text.slice(0,i))+'<mark>'+esc(text.slice(i,i+q.length))+'</mark>'+esc(text.slice(i+q.length))}
+function match(q,...fields){if(!q)return true;const l=q.toLowerCase(),d=q.replace(/\D/g,'');return fields.some(f=>f&&(String(f).toLowerCase().includes(l)||(d.length>=3&&String(f).replace(/\D/g,'').includes(d))))}
+
+/* ---------- coupon desk scenarios ---------- */
+const DESK={
+  '35':{k:'stock',batch:'PB-0002',valid:30},
+  '12':{k:'issued',batch:'PB-0002',holder:'Lakshmi Devi',holderMob:'98480 11223',issued:'18 Nov',expires:'18 Dec 2026',coach:'Prasanthi Reddy'},
+  '7':{k:'d1today',batch:'PB-0001',holder:'Ramesh Naidu',visitor:'Sravani K',issued:'10 Nov',expires:'10 Dec 2026',d1:'Today, 9:42 am'},
+  '9':{k:'d1before',batch:'PB-0001',holder:'Padma S',visitor:'Kavya Reddy',issued:'12 Nov',expires:'12 Dec 2026',d1:'Yesterday, 6:10 pm'},
+  '3':{k:'done',batch:'PB-0001',holder:'Venkat Rao',visitor:'Anitha P',visitorMob:'99630 44118',issued:'02 Nov',expires:'02 Dec 2026',d1:'05 Nov',d2:'06 Nov'},
+  '41':{k:'expired',batch:'PB-0001',holder:'Suresh B',issued:'21 Oct',expires:'20 Nov 2026',valid:30},
+  '88':{k:'other',club:'B Ravi Club'},
+};
+
+/* ---------- state ---------- */
+let S={search:false,sq:'',sscope:'all',f:{q:''},screen:'login',portal:'club',ws:'admin',page:'overview',range:'d30',menu:false,desk:null,deskNum:'',issue:{purpose:'TRIAL',cust:null,newCust:false},visit:{mob:'',err:'',ok:false},sheet:null,issued:false,d2:false,trial:false,batchValid:30};
+const app=document.getElementById('app');
+
+function scale(v){return Math.round(v*RANGES[S.range][1])}
+function spark(arr,color){
+  const w=160,h=34,max=Math.max(...arr),min=Math.min(...arr);
+  const pts=arr.map((v,i)=>[i*(w/(arr.length-1)),h-3-((v-min)/((max-min)||1))*(h-8)]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const last=pts[pts.length-1];
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d} L${w} ${h} L0 ${h} Z" fill="${color}" fill-opacity=".09"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/><circle cx="${last[0]}" cy="${last[1]}" r="2.6" fill="${color}"/></svg>`;
+}
+
+/* ---------- shell ---------- */
+function shell(inner){
+  const club=S.ws==='admin'?null:CLUBS.find(c=>'club:'+c.id===S.ws);
+  const nav=club
+    ? [['home','Home','home'],['desk','Coupon desk','desk'],['customers','Customers','users'],['referrals','Referrals','coupon'],['programs','Trials & CVC','trial'],['coaches','Coaches','coach']]
+    : [['overview','Overview','home'],['clubs','Clubs','clubs'],['coupons','Coupons','coupon'],['resets','Resets','key'],['import','Import','upload'],['activity','Activity','log']];
+  const tabNav=club?nav.filter(n=>n[0]!=='programs'):nav.filter(n=>['overview','clubs','coupons','resets','activity'].includes(n[0]));
+  const nb=list=>list.map(([k,l,i])=>`<button class="navb${S.page===k?' on':''}" data-act="page" data-v="${k}">${ic(i,20)}<span>${l}</span></button>`).join('');
+  const wsBtn = club
+    ? `<span class="dot club">${club.name.split('·').pop().trim().slice(0,2).toUpperCase()}</span><span class="t"><b>${esc(club.name)}</b><i>${club.mine?'You are the Owner':club.fresh?'New club · Super Admin view':'Super Admin view'}</i></span>`
+    : `<span class="dot admin">SA</span><span class="t"><b>Admin console</b><i>All ${CLUBS.length} clubs</i></span>`;
+  const menu = S.menu ? `<div class="menu" role="menu">
+      <div class="h">Workspace</div>
+      <button class="${S.ws==='admin'?'on':''}" data-act="ws" data-v="admin"><span class="dot admin" style="width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--emerald);color:var(--gold-hi);font-size:12px;font-weight:600">SA</span><span class="t"><b>Admin console</b><i>Every club, coupons, logins</i></span></button>
+      <div class="h">My club</div>
+      ${CLUBS.filter(c=>c.mine).map(c=>`<button class="${S.ws==='club:'+c.id?'on':''}" data-act="ws" data-v="club:${c.id}"><span style="width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--gold-soft);color:var(--gold-ink);font-size:12px;font-weight:600">KA</span><span class="t"><b>${esc(c.name)}</b><i>You are the Owner</i></span></button>`).join('')}
+      <div class="h">Work in another club</div>
+      ${CLUBS.filter(c=>!c.mine).slice(0,4).map(c=>`<button data-act="ws" data-v="club:${c.id}"><span style="width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--line-2);color:var(--muted);font-size:12px;font-weight:600">${c.city.slice(0,2).toUpperCase()}</span><span class="t"><b>${esc(c.name)}</b><i>${esc(c.city)} · Owner ${esc(c.owner)}</i></span></button>`).join('')}
+      <div style="padding:8px 10px">${note('One login. Giri switches between the Admin console and his own club here; the switch is always in the header.')}</div>
+    </div>` : '';
+  return `<header class="top">
+      <div class="logo">${ic('leaf',26,'#B48A2C',1.4)}<span>SHREYAS</span></div>
+      <button class="ws" data-act="menu" aria-haspopup="menu" aria-expanded="${S.menu}">${wsBtn}${ic('chev',16)}</button>
+      <div class="sp"></div>
+      <button class="sbtn" data-act="opensearch" aria-label="Search customers, referrals and coaches">${ic('search',18)}<span class="lbl">Search customers, referrals, coaches</span><kbd>/</kbd></button>
+      <button class="avatar" title="Giri Babu M S · Log out" data-act="logout">GB</button>
+    </header>${menu}
+    <div class="body">
+      <nav class="side" aria-label="Main">${nb(nav)}<p class="sub">Account</p><button class="navb" data-act="logout">${ic('key',20)}<span>Change password</span></button></nav>
+      <main class="main"><div class="content">${inner}</div></main>
+    </div>
+    <nav class="tabs" aria-label="Main">${nb(tabNav)}</nav>
+    ${S.sheet?sheet():''}${S.search?searchOverlay():''}`;
+}
+
+/* ---------- login ---------- */
+function login(){
+  return `<div class="login">
+    <div class="lbrand"><p class="eyebrow">Shreyas Wellness World</p><h1>Coupon &amp; Referral</h1><p>Every coupon, every friend's visit and every conversion, across your Nutrition Clubs.</p></div>
+    <div class="lform"><form data-act="login">
+      <div class="segl" role="tablist"><button type="button" class="${S.portal==='club'?'on':''}" data-act="portal" data-v="club">Club Owner</button><button type="button" class="${S.portal==='admin'?'on':''}" data-act="portal" data-v="admin">Super Admin</button></div>
+      <h2 class="sec" style="font-size:28px">${S.portal==='club'?'Club Owner login':'Super Admin login'}</h2>
+      <label class="f" for="lu">Herbalife ID or mobile<input class="inp" id="lu" value="w1578045" autocomplete="off"></label>
+      <label class="f" for="lp">Password<input class="inp" id="lp" type="password" value="password123"></label>
+      <button class="btn block" type="submit">Log in</button>
+      ${S.portal==='club'?'<button type="button" class="btn ghost block">Forgot password?</button>':''}
+      ${note(S.portal==='club'
+        ? 'Giri is a Super Admin who also owns a club, so this tab takes him straight to <b>his club</b>. A Club Owner on the Super Admin tab is still told to use the Club Owner login.'
+        : 'This tab opens the <b>Admin console</b>. He can jump into his club any time from the header.')}
+    </form></div></div>`;
+}
+
+/* ---------- admin overview ---------- */
+function rangeChips(){return `<div class="chips" role="group" aria-label="Period">${Object.entries(RANGES).map(([k,[l]])=>`<button class="chip${S.range===k?' on':''}" data-act="range" data-v="${k}">${l}</button>`).join('')}</div>`}
+function kpiRow(src){
+  const tot=k=>src.reduce((a,c)=>a+c[k],0);
+  const items=[['Friends visited','visits',SPARK.visits,'#0F3B32'],['Completed Day 2','d2',SPARK.d2,'#0F3B32'],['Trials started','trials',SPARK.trials,'#B48A2C'],['CVC conversions','cvc',SPARK.cvc,'#B48A2C']];
+  const dl=DELTA[S.range];
+  return `<div class="kpis">${items.map(([l,k,sp,col],i)=>{
+    const v=scale(tot(k));
+    const d=dl[i];
+    return `<div class="kpi"><span class="l">${l}</span><span class="v num">${v}</span><span class="d">${S.range==='all'?'<span class="muted">Since launch</span>':`<span class="${d>=0?'up':'down'}">${d>=0?'▲':'▼'} ${Math.abs(d)}%</span><span class="muted">vs previous ${RANGES[S.range][0].toLowerCase()}</span>`}</span>${spark(sp,col)}</div>`;}).join('')}</div>`;
+}
+function funnel(src){
+  const t=k=>scale(src.reduce((a,c)=>a+c[k],0));
+  const issued=t('issued'),visits=t('visits'),d1=Math.round(visits*.95),d2=t('d2'),tr=t('trials'),done=Math.round(tr*.8),cvc=t('cvc');
+  const rows=[['Coupons issued',issued],['Friends visited',visits],['Day 1 redeemed',d1],['Day 2 redeemed',d2],['Trials started',tr,1],['Trials completed',done,1],['Joined CVC',cvc,1]];
+  const top=Math.max(issued,1);
+  return `<div class="fun">${rows.map(([l,n,cv],i)=>`<div class="r${cv?' cv':''}"><span>${l}</span><span class="bar"><i style="width:${Math.max(n?2:0,Math.round(n/top*100))}%"></i></span><span class="n num">${n}${i?`<span class="p">${rows[i-1][1]?Math.round(n/rows[i-1][1]*100):0}%</span>`:''}</span></div>`).join('')}</div>`;
+}
+function overview(){
+  const list=CLUBS.filter(c=>!c.fresh);
+  const ranked=[...list].sort((a,b)=>(b.cvc/b.trials||0)-(a.cvc/a.trials||0)||b.visits-a.visits);
+  return `<div class="head"><div><p class="eyebrow">Network · ${RANGES[S.range][0]}</p><h1 class="pg">Good morning, Giri</h1></div>${rangeChips()}</div>
+  ${note('Every number follows the period you pick. Today the dashboard shows all-time totals under the month name.')}
+  <div class="att">
+    <button class="attc bad" data-act="page" data-v="resets">${ic('key',20,'#9B3530')}<span><b>2 password resets</b><span>Club Owners waiting for a temporary password</span></span></button>
+    <button class="attc">${ic('coupon',20,'#9A6A12')}<span><b>Wellness Hub: 12 coupons left</b><span>About 4 days at this pace. Allocate more.</span></span></button>
+    <button class="attc">${ic('users',20,'#9A6A12')}<span><b>Pulivendula Club not started</b><span>Owner hasn't logged in · no coaches, no coupons</span></span></button>
+    <button class="attc info">${ic('alert',20,'#1D5C4C')}<span><b>Health Zone quiet for 9 days</b><span>No coupons issued or visits recorded</span></span></button>
+  </div>
+  ${kpiRow(list)}
+  <div class="grid2">
+    <section class="panel"><div class="head"><h2 class="sec">Club ranking</h2><span class="muted small">Ranked by trial → CVC</span></div>
+      <div class="tw"><table><thead><tr><th></th><th>Club</th><th class="r">Visits</th><th class="r">Day 2</th><th class="r">CVC</th><th>Trial → CVC</th><th class="r">Stock</th></tr></thead><tbody>
+      ${ranked.map((c,i)=>{const p=c.trials?Math.round(c.cvc/c.trials*100):0;return `<tr><td><span class="rank${i<3?' g':''}">${i+1}</span></td><td><b style="font-weight:500">${esc(c.name)}</b><br><span class="muted small">${esc(c.city)}${c.mine?' · your club':''}</span></td><td class="r num">${scale(c.visits)}</td><td class="r num">${scale(c.d2)}</td><td class="r num">${scale(c.cvc)}</td><td><span class="mb"><span class="bar"><i style="width:${p}%"></i></span><span class="num small">${p}%</span></span></td><td class="r">${c.stock<20?`<span class="pill bad">${c.stock}</span>`:`<span class="num">${c.stock}</span>`}</td></tr>`}).join('')}
+      </tbody></table></div></section>
+    <section class="panel"><h2 class="sec">Network funnel</h2>${funnel(list)}
+      <p class="muted small" style="margin:0">Percentages compare each step with the step above it.</p></section>
+  </div>
+  <div class="grid3">
+    <section class="panel"><p class="eyebrow">Coupon inventory</p>
+      <div class="gauge">${ring(.62,'#0F3B32')}<div><div class="big num">2,000</div><span class="muted small">printed in 2 batches</span></div></div>
+      <div class="small" style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between"><span>With clubs, unused</span><b class="num">562</b></div><div style="display:flex;justify-content:space-between"><span>Issued to customers</span><b class="num">678</b></div><div style="display:flex;justify-content:space-between"><span>Not allocated yet</span><b class="num">760</b></div></div></section>
+    <section class="panel"><p class="eyebrow">Top inviters</p>${[['Lakshmi Devi','Shreyas · Kadapa',7,3],['Venkat Rao','B Ravi Club',5,2],['Padma S','Wellness Hub',4,2]].map(([n,c,s,v])=>`<div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><span><b style="font-weight:500">${n}</b><br><span class="muted small">${c}</span></span><span class="small" style="text-align:right"><b class="num">${s}</b> friends<br><span class="muted">${v} converted</span></span></div>`).join('')}</section>
+    <section class="panel"><p class="eyebrow">Logins this week</p>
+      <div class="gauge"><div class="big num">5<span style="font-size:22px;color:var(--faint)"> / 7</span></div><span class="muted small">Club Owners logged in at least once</span></div>
+      <div class="small muted">Not seen: Pulivendula Club (never), Health Zone (11 days)</div></section>
+  </div>`;
+}
+function ring(f,col){const r=34,c=2*Math.PI*r;return `<svg width="86" height="86" viewBox="0 0 86 86" aria-hidden="true"><circle cx="43" cy="43" r="${r}" fill="none" stroke="#EFEBE2" stroke-width="9"/><circle cx="43" cy="43" r="${r}" fill="none" stroke="${col}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(c*f).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 43 43)"/></svg>`}
+
+/* ---------- club home ---------- */
+function deskBox(compact){
+  return `<section class="desk"><p class="eyebrow">Coupon desk</p><h2>${compact?'Enter a coupon number':'Type the number on the coupon in front of you'}</h2>
+    <form class="deskin" data-act="desk"><label class="pre" for="dn"><span>#</span><input id="dn" inputmode="numeric" placeholder="e.g. 35" value="${esc(S.deskNum)}" autocomplete="off" aria-label="Coupon number"></label><button class="btn" type="submit">Go</button></form>
+    <div class="try"><span>Try:</span>${[['35','in stock'],['12','issued'],['9','Day 1 done'],['7','Day 1 today'],['3','after Day 2'],['41','expired'],['88','other club']].map(([n,l])=>`<button data-act="try" data-v="${n}">#${n} · ${l}</button>`).join('')}</div>
+  </section>`;
+}
+function clubHome(club){
+  if(club.fresh) return newClub(club);
+  return `<div class="head"><div><p class="eyebrow">${esc(club.name)} · ${RANGES[S.range][0]}</p><h1 class="pg">${club.mine?'Your club today':esc(club.name)}</h1></div>${rangeChips()}</div>
+  ${deskBox()}
+  ${S.desk?`<section class="panel">${deskResult()}</section>`:''}
+  ${note('The coupon number decides the next step. No more choosing between Issue, Register visitor and Redeem screens.')}
+  <div class="grid2">
+    <section class="panel"><div class="head"><h2 class="sec">Today</h2><span class="muted small">Tue, 24 Nov</span></div>
+      <div class="today">
+        <div class="td"><span class="ic g">${ic('door',18)}</span><span class="t"><b>Kavya Reddy · Day 2 due</b><i>Coupon PB-0001 #9 · Day 1 was yesterday</i></span><button data-act="try" data-v="9">Open</button></div>
+        <div class="td"><span class="ic y">${ic('trial',18)}</span><span class="t"><b>Ramesh Naidu · trial Day 2</b><i>Mark attendance when he arrives</i></span><button>Mark</button></div>
+        <div class="td"><span class="ic y">${ic('scale',18)}</span><span class="t"><b>3 weekly check-ups due</b><i>Padma S, Venkat Rao, Hari K</i></span><button>Record</button></div>
+        <div class="td"><span class="ic r">${ic('alert',18)}</span><span class="t"><b>4 coupons expire this week</b><i>Issued but no friend has visited yet</i></span><button>See</button></div>
+      </div>
+      ${note('A to-do list built from the data: Day 2 visits due, trial attendance, weekly check-ups and coupons about to expire.')}</section>
+    <section class="panel"><h2 class="sec">This period</h2>${funnel([club])}</section>
+  </div>
+  ${kpiRow([club])}
+  <div class="grid3">
+    <section class="panel"><p class="eyebrow">Coupon stock</p><div class="gauge">${ring(club.stock/250,'#B48A2C')}<div><div class="big num">${club.stock}</div><span class="muted small">left · about 46 days at this pace</span></div></div>
+      <div class="small muted">PB-0002 #301 – #484 · valid 30 days after issue</div></section>
+    <section class="panel"><p class="eyebrow">Coach ranking</p>${COACHES.map((c,i)=>`<div style="display:flex;align-items:center;gap:10px"><span class="rank${i<1?' g':''}">${i+1}</span><span style="flex:1;min-width:0"><b style="font-weight:500">${c.n}</b><br><span class="muted small">${c.issued} coupons · ${c.trials} trials</span></span><span class="pill ${c.cvc?'good':'grey'}">${c.cvc} CVC</span></div>`).join('')}</section>
+    <section class="panel"><p class="eyebrow">Top inviters</p>${[['Lakshmi Devi',7,3],['Ramesh Naidu',4,1],['Padma S',3,2]].map(([n,s,v])=>`<div style="display:flex;justify-content:space-between"><b style="font-weight:500">${n}</b><span class="small"><b class="num">${s}</b> friends · <span class="muted">${v} converted</span></span></div>`).join('')}<button class="btn ghost">See referral trees</button></section>
+  </div>`;
+}
+
+/* ---------- coupon desk results ---------- */
+function stepper(done,now){const L=['Issued','Friend visits','Day 1','Day 2','Trial','CVC'];return `<div class="steps">${L.map((l,i)=>`<span class="step ${i<done?'done':i===now?'now':''}"><span class="c">${i<done?'✓':i+1}</span>${l}</span>`).join('')}</div>`}
+function ticket(n,d){return `<div class="ctk"><i>${d.batch||''}</i><b>#${n}</b></div>`}
+function deskResult(){
+  const n=S.desk,d=DESK[n];
+  if(!d) return `<div class="msg bad"><b>#${esc(n)} isn't one of your club's coupons.</b> Check the number printed on the coupon.</div>`;
+  if(d.k==='other') return `<div class="coupon">${ticket(n,{batch:'PB-0002'})}<div class="msg bad" style="flex:1"><b>This coupon belongs to ${d.club}.</b> Coupons can be used only at the club that issued them.</div></div>`;
+  if(d.k==='expired') return `<div class="coupon">${ticket(n,d)}<div style="flex:1;display:flex;flex-direction:column;gap:6px"><span class="pill bad" style="align-self:flex-start">Expired</span><b>Given to ${d.holder} on ${d.issued}. Expired on ${d.expires}.</b><span class="muted small">${d.batch} coupons are valid for ${d.valid} days after they're issued. An expired coupon can't be used for a visit.</span></div></div>${note('Validity is set per print batch. The expiry date is fixed on the day the coupon is issued.')}`;
+  if(d.k==='stock'){
+    if(S.issued) return `<div class="coupon">${ticket(n,d)}<div style="flex:1;display:flex;flex-direction:column;gap:4px"><span class="pill good" style="align-self:flex-start">Issued</span><b style="font-size:18px">Given to ${esc(S.issue.cust||'Meena Kumari')} for the 3-day trial</b><span class="muted small">Valid until <b>24 Dec 2026</b> · coach Prasanthi Reddy</span></div></div>${stepper(1,1)}<div class="row2"><button class="btn gold">Share on WhatsApp</button><button class="btn ghost" data-act="reset">Next coupon</button></div>`;
+    const c=S.issue;
+    return `<div class="coupon">${ticket(n,d)}<div style="flex:1"><span class="pill gold">In your stock</span><div style="margin-top:6px"><b style="font-size:18px">Issue this coupon</b><br><span class="muted small">${d.batch} · valid ${d.valid} days from today, until 24 Dec 2026</span></div></div></div>
+      ${stepper(0,0)}
+      <div class="grid2" style="gap:14px">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <label class="f" for="cs">Customer<input class="inp" id="cs" placeholder="Name or mobile" value="${esc(c.cust||'')}" data-act="custtype"></label>
+          ${!c.cust&&!c.newCust?`<div class="pick">${[['Meena Kumari','90100 22334','New'],['Hari K','98666 10101','CVC member']].map(([nm,m,st])=>`<button data-act="cust" data-v="${nm}"><span class="t"><b>${nm}</b><i>${m}</i></span><span class="pill ${st==='New'?'grey':'good'}">${st}</span></button>`).join('')}<button data-act="newcust"><span class="t"><b>+ New customer</b><i>Add them here without leaving this screen</i></span></button></div>`:''}
+          ${c.newCust?`<div class="row2"><label class="f" for="nn">Name<input class="inp" id="nn" placeholder="Full name"></label><label class="f" for="nm">Mobile<input class="inp" id="nm" inputmode="numeric" placeholder="10 digits"></label></div>${note('New customers are added right here. Today this is a dead end: "Add them from Customers first".')}`:''}
+          ${c.cust?`<div class="msg info small">Coach from profile: <b>Prasanthi Reddy</b></div>`:''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px"><span class="small muted">Coupon is for</span>
+          <div class="pick">
+            <button class="${c.purpose==='TRIAL'?'on':''}" data-act="purpose" data-v="TRIAL"><span class="t"><b>3 Days Trial</b><i>Starts the trial · once per mobile number, ever</i></span></button>
+            <button disabled><span class="t"><b>CVC Membership</b><i>Needs a completed trial</i></span><span class="pill grey">Locked</span></button>
+            <button disabled><span class="t"><b>Weekly Results</b><i>CVC members with an approved award</i></span><span class="pill grey">Locked</span></button>
+          </div></div>
+      </div>
+      <button class="btn block" data-act="doissue" ${c.cust||c.newCust?'':'disabled'}>Issue coupon #${n}</button>`;
+  }
+  if(d.k==='issued'){
+    const v=S.visit;
+    if(v.ok) return `<div class="coupon">${ticket(n,d)}<div style="flex:1"><span class="pill good">Day 1 recorded</span><div style="margin-top:6px"><b style="font-size:18px">Welcome, ${esc(v.name||'Divya S')}!</b><br><span class="muted small">Day 2 opens tomorrow, 25 Nov · coupon valid until ${d.expires}</span></div></div></div>${stepper(3,3)}<button class="btn ghost" data-act="reset">Next coupon</button>`;
+    return `<div class="coupon">${ticket(n,d)}<div style="flex:1"><span class="pill gold">Waiting for a friend</span><div style="margin-top:6px"><b style="font-size:18px">Given to ${d.holder} on ${d.issued}</b><br><span class="muted small">Valid until ${d.expires} · coach ${d.coach}</span></div></div></div>
+      ${stepper(1,1)}
+      <form data-act="visitmob" style="display:flex;flex-direction:column;gap:10px">
+        <div class="row2"><label class="f" for="vm">Friend's mobile<input class="inp" id="vm" inputmode="numeric" value="${esc(v.mob)}" placeholder="10 digits"></label><label class="f" for="vn">Friend's name<input class="inp" id="vn" value="${esc(v.name||'')}" placeholder="Full name"></label></div>
+        <div class="try" style="color:var(--muted)"><span>Try mobile:</span><button type="button" style="color:var(--ink);border-color:var(--line)" data-act="vtry" data-v="99630 44118">99630 44118 (visited before)</button><button type="button" style="color:var(--ink);border-color:var(--line)" data-act="vtry" data-v="98480 11223">98480 11223 (holder)</button><button type="button" style="color:var(--ink);border-color:var(--line)" data-act="vtry" data-v="90000 12345">90000 12345 (new)</button></div>
+        ${v.err?`<div class="msg bad">${v.err}</div>`:''}
+        <button class="btn block" type="submit">Register friend &amp; record Day 1</button>
+      </form>
+      ${note('Registering the friend and Day 1 is now one step. A person can be a referral visitor only once, ever, across all clubs.')}`;
+  }
+  if(d.k==='d1today') return `<div class="coupon">${ticket(n,d)}<div style="flex:1"><span class="pill gold">Day 1 done</span><div style="margin-top:6px"><b style="font-size:18px">${d.visitor}, invited by ${d.holder}</b><br><span class="muted small">Day 1: ${d.d1}</span></div></div></div>${stepper(3,3)}<button class="btn block" disabled>Day 2 opens tomorrow, 25 Nov</button>${note('Day 2 can only be recorded on a later day than Day 1.')}`;
+  if(d.k==='d1before'){
+    if(S.d2) return `<div class="coupon">${ticket(n,d)}<div style="flex:1"><span class="pill good">Fully redeemed</span><div style="margin-top:6px"><b style="font-size:18px">${d.visitor} completed both visits</b><br><span class="muted small">Next step: offer the 3-day trial</span></div></div></div>${stepper(4,4)}<div class="row2"><button class="btn gold" data-act="try" data-v="3">Start 3-day trial</button><button class="btn ghost" data-act="reset">Not now</button></div>`;
+    return `<div class="coupon">${ticket(n,d)}<div style="flex:1"><span class="pill gold">Day 2 due</span><div style="margin-top:6px"><b style="font-size:18px">${d.visitor}, invited by ${d.holder}</b><br><span class="muted small">Day 1: ${d.d1} · valid until ${d.expires}</span></div></div></div>${stepper(3,3)}<button class="btn block" data-act="d2">Record Day 2 for ${d.visitor}</button>`;
+  }
+  if(d.k==='done'){
+    if(S.trial) return `<div class="coupon">${ticket(n,d)}<div style="flex:1"><span class="pill good">Trial started</span><div style="margin-top:6px"><b style="font-size:18px">${d.visitor} · 3-day trial from today</b><br><span class="muted small">Mark Day 1, Day 2 and Day 3 attendance in order</span></div></div></div>${stepper(5,5)}<button class="btn ghost" data-act="reset">Next coupon</button>`;
+    return `<div class="coupon">${ticket(n,d)}<div style="flex:1"><span class="pill good">Day 1 and Day 2 done</span><div style="margin-top:6px"><b style="font-size:18px">${d.visitor}, invited by ${d.holder}</b><br><span class="muted small">Day 1 ${d.d1} · Day 2 ${d.d2}</span></div></div></div>${stepper(4,4)}
+      <div class="row2"><button class="btn gold" data-act="trial">Start 3-day trial for ${d.visitor}</button><button class="btn ghost" data-act="reset">Not now</button></div>
+      ${note('Trials are matched on mobile number only. If anyone with '+d.visitorMob+' has had a trial at any club, this button explains that instead.')}`;
+  }
+  return '';
+}
+
+/* ---------- new club ---------- */
+function newClub(club){
+  const steps=[['Owner login created','Ghori Noor Ahammad · temporary password sent',1],['Owner logs in and sets a password','Not yet · temporary password expires in 2 days',0],['Add wellness coaches','At least one coach is needed to issue coupons',0],['Get a coupon range','Super Admin allocates numbers from a print batch',0],['Issue the first coupon','Use the coupon desk on the home screen',0]];
+  const done=steps.filter(s=>s[2]).length;
+  return `<div><p class="eyebrow">${esc(club.name)} · new club</p><h1 class="pg">Let's get ${esc(club.city)} started</h1></div>
+  <section class="panel" style="max-width:720px"><div class="head"><h2 class="sec">Setup</h2><span class="muted small">${done} of ${steps.length} done</span></div><div class="progress"><i style="width:${done/steps.length*100}%"></i></div>
+    <div class="check">${steps.map(([t,s,dn],i)=>`<div class="ck${dn?' done':''}"><span class="c">${dn?ic('check',14,'#fff',2.4):''}</span><span class="t"><b>${t}</b><i>${s}</i></span>${!dn&&i===2?'<button class="btn ghost" style="min-height:36px;padding:6px 12px">Add coach</button>':''}${!dn&&i===3?'<button class="btn ghost" style="min-height:36px;padding:6px 12px">Allocate</button>':''}${!dn&&i===1?'<button class="btn ghost" style="min-height:36px;padding:6px 12px">Resend</button>':''}</div>`).join('')}</div>
+    ${note('A new club sees this checklist instead of an empty dashboard full of zeros.')}</section>`;
+}
+
+/* ---------- admin coupons (batch validity) ---------- */
+function coupons(){
+  return `<div class="head"><div><p class="eyebrow">Inventory</p><h1 class="pg">Coupons</h1></div><div class="row2"><button class="btn ghost">Allocate to a club</button><button class="btn" data-act="sheet" data-v="batch">+ New print batch</button></div></div>
+  <section class="panel"><div class="tw"><table><thead><tr><th>Batch</th><th>Numbers</th><th class="r">Printed</th><th>Valid after issue</th><th class="r">With clubs</th><th class="r">Issued</th><th class="r">Free</th></tr></thead><tbody>
+    <tr><td><b style="font-weight:500">PB-0001</b><br><span class="muted small">Diwali leaflet</span></td><td class="num">#1 – #1000</td><td class="r small">02 Oct</td><td><span class="pill gold">30 days</span></td><td class="r num">212</td><td class="r num">548</td><td class="r num">240</td></tr>
+    <tr><td><b style="font-weight:500">PB-0002</b><br><span class="muted small">November drive</span></td><td class="num">#1 – #1000</td><td class="r small">14 Nov</td><td><span class="pill gold">30 days</span></td><td class="r num">350</td><td class="r num">130</td><td class="r num">520</td></tr>
+  </tbody></table></div>${note('Each batch has its own validity. A coupon expires that many days after the day it is issued. Changing the number later affects only coupons issued after the change.')}</section>
+  <section class="panel"><h2 class="sec">Allocations</h2><div class="tw"><table><thead><tr><th>Club</th><th>Batch</th><th>Range</th><th class="r">Unused</th><th></th></tr></thead><tbody>
+    ${[['Shreyas · Kadapa','PB-0002','#301 – #500',184],['Wellness Hub','PB-0001','#801 – #900',12],['B Ravi Club','PB-0002','#501 – #600',96]].map(([c,b,r,u])=>`<tr><td>${c}</td><td>${b}</td><td class="num">${r}</td><td class="r num">${u}</td><td class="r"><button class="chip">Take back unused</button></td></tr>`).join('')}
+  </tbody></table></div>${note('Unused coupons can be taken back from a club or moved to another club. Today an allocation can never be undone.')}</section>`;
+}
+function sheet(){
+  return `<div class="sheetbg" data-act="closesheet"><div class="sheet" role="dialog" aria-label="New print batch">
+    <h2 class="sec" style="font-size:26px">New print batch</h2>
+    <div class="row2"><label class="f" for="bs">First number<input class="inp" id="bs" value="1" inputmode="numeric"></label><label class="f" for="be">Last number<input class="inp" id="be" value="1000" inputmode="numeric"></label></div>
+    <div class="row2"><label class="f" for="bn">Name (optional)<input class="inp" id="bn" placeholder="e.g. Sankranti leaflet"></label><label class="f" for="bd">Print date<input class="inp" id="bd" type="date" value="2026-11-24" max="2026-11-24"></label></div>
+    <label class="f" for="bv">Valid for how many days after it's issued?
+      <div class="chips">${[15,30,45,60,90].map(v=>`<button type="button" class="chip${S.batchValid===v?' on':''}" data-act="bval" data-v="${v}">${v} days</button>`).join('')}</div></label>
+    <div class="msg info small">A coupon issued on 24 Nov will expire on <b>${expiry(S.batchValid)}</b>. Expired coupons can't be used for Day 1 or Day 2.</div>
+    <div class="row2"><button class="btn ghost" style="flex:1" data-act="closesheet">Cancel</button><button class="btn" style="flex:1" data-act="closesheet">Create 1,000 coupons</button></div>
+  </div></div>`;
+}
+function expiry(days){const d=new Date(2026,10,24);d.setDate(d.getDate()+days);return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+
+function placeholder(title,txt){return `<div><p class="eyebrow">Same features, new look</p><h1 class="pg">${title}</h1></div><div class="placeholder">${ic('check',28,'#B48A2C')}<b>${title}</b><span>${txt}</span></div>`}
+
+/* ---------- global search ---------- */
+function searchOverlay(){
+  return `<div class="sover" data-act="closesearch"><div class="sbox" role="dialog" aria-label="Search">
+    <div class="in">${ic('search',20,'#66746E')}<input id="gq" placeholder="Name, mobile, coupon number or Herbalife ID" value="${esc(S.sq)}" autocomplete="off" aria-label="Search"><button class="chip" data-act="closesearch">Esc</button></div>
+    <div class="scope" role="group" aria-label="Search in">${[['all','Everything'],['cust','Customers'],['ref','Referrals'],['coach','Coaches']].map(([k,l])=>`<button class="chip${S.sscope===k?' on':''}" data-act="sscope" data-v="${k}">${l}</button>`).join('')}<span class="muted small" style="margin-left:auto;align-self:center">${S.ws==='admin'?'All clubs':'This club'}</span></div>
+    <div class="sres" id="sres">${searchResults()}</div>
+  </div></div>`;
+}
+function searchResults(){
+  const q=S.sq.trim();
+  if(!q) return `<div class="h">Try</div>${['Lakshmi','98480','#12','W2213340'].map(x=>`<button class="hit" data-act="sfill" data-v="${x}"><span class="av c">${ic('search',16)}</span><span class="t"><b>${x}</b><i>${x.startsWith('#')?'Coupon number':x.startsWith('W')?'Herbalife ID':/\d/.test(x)?'Part of a mobile number':'Name'}</i></span></button>`).join('')}${note('One search box for the whole app. It matches names, any part of a mobile number, coupon numbers and Herbalife IDs.')}`;
+  const sc=S.sscope;
+  const cs=sc==='all'||sc==='cust'?CUST.filter(c=>match(q,c.n,c.m)):[];
+  const rs=sc==='all'||sc==='ref'?REF.filter(r=>match(q.replace('#',''),r.c,r.h,r.v)):[];
+  const ks=sc==='all'||sc==='coach'?COACHL.filter(k=>match(q,k.n,k.m,k.id)):[];
+  if(!cs.length&&!rs.length&&!ks.length) return `<div class="empty"><b>Nothing matches "${esc(q)}"</b><span>Check the spelling or try part of the mobile number.</span></div>`;
+  const lim=sc==='all'?4:20;
+  const sec=(t,arr,f)=>arr.length?`<div class="h"><span>${t}</span><span>${arr.length}</span></div>${arr.slice(0,lim).map(f).join('')}`:'';
+  return sec('Customers',cs,c=>`<button class="hit" data-act="goto" data-v="customers"><span class="av">${c.n.split(' ').map(w=>w[0]).join('').slice(0,2)}</span><span class="t"><b>${hl(c.n,q)}</b><i>${hl(fmtMob(c.m),q)} · ${c.co}</i></span><span class="pill ${STAGE_PILL[c.st]}">${c.st}</span></button>`)
+    +sec('Referrals',rs,r=>`<button class="hit" data-act="goto" data-v="referrals"><span class="av r">${ic('coupon',16)}</span><span class="t"><b>${hl(r.c,q.replace('#',''))}</b><i>${hl(r.h,q)}${r.v?' → '+hl(r.v,q):' · waiting for a friend'}</i></span><span class="pill ${REF_PILL[r.st]}">${r.st}</span></button>`)
+    +sec('Coaches',ks,k=>`<button class="hit" data-act="goto" data-v="coaches"><span class="av c">${ic('coach',16)}</span><span class="t"><b>${hl(k.n,q)}</b><i>${hl(k.id,q)} · ${hl(fmtMob(k.m),q)}</i></span>${k.active?'':'<span class="pill grey">Inactive</span>'}</button>`);
+}
+
+/* ---------- list pages with filters ---------- */
+function applied(list){
+  const on=list.filter(x=>x[2]);
+  if(!on.length) return '';
+  return `<div class="applied"><span>Filtered by</span>${on.map(([k,l,v])=>`<span class="x"><b>${l}:</b> ${esc(v)}<button class="linkb" style="text-decoration:none;padding:0 2px" data-act="fclear" data-v="${k}" aria-label="Remove ${l} filter">✕</button></span>`).join('')}<button class="linkb" data-act="fclear" data-v="*">Clear all</button></div>`;
+}
+function countBy(arr,key,val){return arr.filter(x=>x[key]===val).length}
+function customersPage(club){
+  return `<div class="head"><div><p class="eyebrow">${esc(club.name)}</p><h1 class="pg">Customers</h1></div><button class="btn">+ New customer</button></div>
+  <section class="fbar">
+    <div class="top2"><label class="sinp" for="fq">${ic('search',18,'#66746E')}<input id="fq" data-list="cust" placeholder="Search name or mobile" value="${esc(S.f.q)}" autocomplete="off"></label>
+      <select class="sel" id="fcoach" data-f="coach" aria-label="Coach"><option value="">All coaches</option>${COACHL.filter(k=>k.active).map(k=>`<option ${S.f.coach===k.n?'selected':''}>${k.n}</option>`).join('')}</select>
+      <select class="sel" id="fjoin" data-f="join" aria-label="Joined"><option value="">Joined any time</option>${['This week','This month','Last 3 months'].map(x=>`<option ${S.f.join===x?'selected':''}>${x}</option>`).join('')}</select>
+      <select class="sel" id="fsort" data-f="sort" aria-label="Sort"><option value="">Newest first</option><option ${S.f.sort==='Name A–Z'?'selected':''}>Name A–Z</option><option ${S.f.sort==='Most friends invited'?'selected':''}>Most friends invited</option></select></div>
+    <div class="fchips" role="group" aria-label="Stage">${['All','New','Visitor','In trial','Trial done','CVC member'].map(s=>`<button class="chip${(S.f.stage||'All')===s?' on':''}" data-act="fstage" data-v="${s}">${s}<span class="n">${s==='All'?CUST.length:countBy(CUST,'st',s)}</span></button>`).join('')}</div>
+    <div id="fapplied"></div>
+  </section>
+  <section class="panel" id="flist"></section>
+  ${note('Search as you type, one tap for a stage, and dropdowns for coach, joining date and sort order. The chips show how many people are in each stage.')}`;
+}
+function custList(){
+  const f=S.f;let r=CUST.filter(c=>match(f.q,c.n,c.m)&&(!f.stage||f.stage==='All'||c.st===f.stage)&&(!f.coach||c.co===f.coach));
+  if(f.join==='This week')r=r.filter(c=>/Nov/.test(c.j)&&parseInt(c.j)>=18);else if(f.join==='This month')r=r.filter(c=>/Nov/.test(c.j));else if(f.join==='Last 3 months')r=r.filter(c=>/Sep|Oct|Nov/.test(c.j));
+  if(f.sort==='Name A–Z')r=[...r].sort((a,b)=>a.n.localeCompare(b.n));if(f.sort==='Most friends invited')r=[...r].sort((a,b)=>b.inv-a.inv);
+  document.getElementById('fapplied').innerHTML=applied([['q','Search',f.q],['stage','Stage',f.stage&&f.stage!=='All'?f.stage:''],['coach','Coach',f.coach],['join','Joined',f.join]]);
+  if(!r.length) return `<div class="empty"><b>No customers match these filters</b><button class="linkb" data-act="fclear" data-v="*">Clear filters</button></div>`;
+  return `<div class="muted small">${r.length} of ${CUST.length} customers</div>
+    <div class="tw tblonly"><table><thead><tr><th>Name</th><th>Mobile</th><th>Stage</th><th>Coach</th><th class="r">Friends invited</th><th class="r">Joined</th></tr></thead><tbody>${r.map(c=>`<tr><td><b style="font-weight:500">${hl(c.n,f.q)}</b></td><td class="num">${hl(fmtMob(c.m),f.q)}</td><td><span class="pill ${STAGE_PILL[c.st]}">${c.st}</span></td><td>${c.co}</td><td class="r num">${c.inv||'—'}</td><td class="r muted">${c.j}</td></tr>`).join('')}</tbody></table></div>
+    <div class="cards">${r.map(c=>`<div class="pc"><span class="t"><b>${hl(c.n,f.q)}</b><i>${hl(fmtMob(c.m),f.q)} · ${c.co}</i></span><span class="pill ${STAGE_PILL[c.st]}">${c.st}</span></div>`).join('')}</div>`;
+}
+function referralsPage(club){
+  return `<div class="head"><div><p class="eyebrow">${esc(club.name)}</p><h1 class="pg">Referrals</h1></div><button class="btn ghost" data-act="page" data-v="desk">Open coupon desk</button></div>
+  <section class="fbar">
+    <div class="top2"><label class="sinp" for="fq">${ic('search',18,'#66746E')}<input id="fq" data-list="ref" placeholder="Coupon number, holder or friend" value="${esc(S.f.q)}" autocomplete="off"></label>
+      <select class="sel" id="fcoach" data-f="coach" aria-label="Coach"><option value="">All coaches</option>${COACHL.filter(k=>k.active).map(k=>`<option ${S.f.coach===k.n?'selected':''}>${k.n}</option>`).join('')}</select>
+      <select class="sel" id="fbatch" data-f="batch" aria-label="Batch"><option value="">All batches</option>${['PB-0001','PB-0002'].map(x=>`<option ${S.f.batch===x?'selected':''}>${x}</option>`).join('')}</select></div>
+    <div class="fchips" role="group" aria-label="Status">${['All','Waiting','Day 1 done','Day 2 done','Expired','Paused'].map(s=>`<button class="chip${(S.f.stage||'All')===s?' on':''}" data-act="fstage" data-v="${s}">${s==='Waiting'?'Waiting for friend':s}<span class="n">${s==='All'?REF.length:countBy(REF,'st',s)}</span></button>`).join('')}</div>
+    <div id="fapplied"></div>
+  </section>
+  <section class="panel" id="flist"></section>
+  ${note('Every coupon given out, with its holder, the friend who used it and where it stands. Filter by status to chase Day 2 visits or coupons about to expire.')}`;
+}
+function refList(){
+  const f=S.f;const q=(f.q||'').replace('#','');
+  const r=REF.filter(x=>match(q,x.c,x.h,x.v)&&(!f.stage||f.stage==='All'||x.st===f.stage)&&(!f.coach||x.co===f.coach)&&(!f.batch||x.c.startsWith(f.batch)));
+  document.getElementById('fapplied').innerHTML=applied([['q','Search',f.q],['stage','Status',f.stage&&f.stage!=='All'?f.stage:''],['coach','Coach',f.coach],['batch','Batch',f.batch]]);
+  if(!r.length) return `<div class="empty"><b>No referrals match these filters</b><button class="linkb" data-act="fclear" data-v="*">Clear filters</button></div>`;
+  return `<div class="muted small">${r.length} of ${REF.length} coupons</div>
+    <div class="tw tblonly"><table><thead><tr><th>Coupon</th><th>Given to</th><th>Friend</th><th>Status</th><th>Coach</th><th class="r">Issued</th><th class="r">Valid until</th></tr></thead><tbody>${r.map(x=>`<tr><td><b style="font-weight:500">${hl(x.c,q)}</b></td><td>${hl(x.h,q)}</td><td>${x.v?hl(x.v,q):'<span class="muted">—</span>'}</td><td><span class="pill ${REF_PILL[x.st]}">${x.st}</span></td><td>${x.co}</td><td class="r muted">${x.is}</td><td class="r ${x.st==='Expired'?'':'muted'}">${x.ex}</td></tr>`).join('')}</tbody></table></div>
+    <div class="cards">${r.map(x=>`<div class="pc"><span class="t"><b>${hl(x.c,q)}</b><i>${hl(x.h,q)}${x.v?' → '+hl(x.v,q):' · waiting for a friend'} · until ${x.ex}</i></span><span class="pill ${REF_PILL[x.st]}">${x.st}</span></div>`).join('')}</div>`;
+}
+function coachesPage(club){
+  return `<div class="head"><div><p class="eyebrow">${esc(club.name)}</p><h1 class="pg">Wellness coaches</h1></div><button class="btn">+ Add coach</button></div>
+  <section class="fbar">
+    <div class="top2"><label class="sinp" for="fq">${ic('search',18,'#66746E')}<input id="fq" data-list="coach" placeholder="Name, mobile or Herbalife ID" value="${esc(S.f.q)}" autocomplete="off"></label>
+      <select class="sel" id="fsort" data-f="sort" aria-label="Sort"><option value="">Most CVC first</option>${['Most coupons issued','Name A–Z'].map(x=>`<option ${S.f.sort===x?'selected':''}>${x}</option>`).join('')}</select></div>
+    <div class="fchips" role="group" aria-label="Status">${['All','Active','Inactive'].map(s=>`<button class="chip${(S.f.stage||'Active')===s?' on':''}" data-act="fstage" data-v="${s}">${s}<span class="n">${s==='All'?COACHL.length:COACHL.filter(k=>k.active===(s==='Active')).length}</span></button>`).join('')}</div>
+    <div id="fapplied"></div>
+  </section>
+  <section class="panel" id="flist"></section>`;
+}
+function coachList(){
+  const f=S.f;const st=f.stage||'Active';
+  let r=COACHL.filter(k=>match(f.q,k.n,k.m,k.id)&&(st==='All'||k.active===(st==='Active')));
+  r=[...r].sort(f.sort==='Name A–Z'?(a,b)=>a.n.localeCompare(b.n):f.sort==='Most coupons issued'?(a,b)=>b.issued-a.issued:(a,b)=>b.cvc-a.cvc||b.issued-a.issued);
+  document.getElementById('fapplied').innerHTML=applied([['q','Search',f.q],['stage','Status',st!=='Active'?st:'']]);
+  if(!r.length) return `<div class="empty"><b>No coaches match</b><button class="linkb" data-act="fclear" data-v="*">Clear filters</button></div>`;
+  return `<div class="tw tblonly"><table><thead><tr><th>Coach</th><th>Herbalife ID</th><th>Mobile</th><th>Upline</th><th class="r">Customers</th><th class="r">Coupons</th><th class="r">Trials</th><th class="r">CVC</th></tr></thead><tbody>${r.map(k=>`<tr><td><b style="font-weight:500">${hl(k.n,f.q)}</b> ${k.active?'':'<span class="pill grey">Inactive</span>'}</td><td class="num">${hl(k.id,f.q)}</td><td class="num">${hl(fmtMob(k.m),f.q)}</td><td class="muted">${k.up}</td><td class="r num">${k.cust}</td><td class="r num">${k.issued}</td><td class="r num">${k.trials}</td><td class="r"><span class="pill ${k.cvc?'good':'grey'}">${k.cvc}</span></td></tr>`).join('')}</tbody></table></div>
+    <div class="cards">${r.map(k=>`<div class="pc"><span class="t"><b>${hl(k.n,f.q)}</b><i>${hl(k.id,f.q)} · ${k.cust} customers · ${k.issued} coupons</i></span><span class="pill ${k.cvc?'good':'grey'}">${k.cvc} CVC</span></div>`).join('')}</div>`;
+}
+function fillList(){
+  const el=document.getElementById('flist');if(!el)return;
+  el.innerHTML=S.page==='customers'?custList():S.page==='referrals'?refList():coachList();
+}
+
+/* ---------- render ---------- */
+function render(){
+  if(S.screen==='login'){app.innerHTML=login();return}
+  const club=S.ws==='admin'?null:CLUBS.find(c=>'club:'+c.id===S.ws);
+  let inner;
+  if(club){
+    inner = S.page==='home'?clubHome(club)
+      : S.page==='desk'?`<div><p class="eyebrow">${esc(club.name)}</p><h1 class="pg">Coupon desk</h1></div>${deskBox(true)}${S.desk?`<section class="panel">${deskResult()}</section>`:'<div class="placeholder"><b>Ready for the next coupon</b><span>Type the printed number. The desk shows the one thing to do next.</span></div>'}`
+      : S.page==='customers'?customersPage(club)
+      : S.page==='referrals'?referralsPage(club)
+      : S.page==='programs'?placeholder('Trials & CVC','Trial days are marked in order and lock once the trial coupon is given. Weekly results get a valid week, sensible weight and waist limits, and approved awards can\'t be overwritten.')
+      : coachesPage(club);
+  } else {
+    inner = S.page==='overview'?overview()
+      : S.page==='coupons'?coupons()
+      : S.page==='clubs'?placeholder('Clubs','Each club shows its owner, setup progress and health. Removing the only Owner login now asks you to confirm.')
+      : S.page==='resets'?placeholder('Password resets','Unchanged: requests from the login page plus "reset any Club Owner now".')
+      : S.page==='import'?placeholder('Import from Excel','Unchanged: check first, then create clubs, owners and coaches.')
+      : placeholder('Activity','Logins and changes, now filterable by club and date.');
+  }
+  app.innerHTML=shell(inner);
+  fillList();
+}
+
+/* ---------- events ---------- */
+function openSearch(){S.search=true;S.menu=false;render();const g=document.getElementById('gq');if(g){g.focus();g.setSelectionRange(g.value.length,g.value.length)}}
+document.addEventListener('input',e=>{
+  if(e.target.id==='gq'){S.sq=e.target.value;document.getElementById('sres').innerHTML=searchResults();return}
+  if(e.target.id==='fq'){S.f.q=e.target.value;fillList();return}
+});
+document.addEventListener('change',e=>{const k=e.target.dataset&&e.target.dataset.f;if(k){S.f[k]=e.target.value;fillList()}});
+document.addEventListener('keydown',e=>{
+  if(e.key==='/'&&S.screen==='app'&&!S.search&&!/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)){e.preventDefault();openSearch()}
+  else if(e.key==='Escape'&&S.search){S.search=false;render()}
+});
+function setDesk(n){S.desk=n;S.deskNum=n;S.issued=false;S.d2=false;S.trial=false;S.visit={mob:'',err:'',ok:false};S.issue={purpose:'TRIAL',cust:null,newCust:false};}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-act]');
+  if(S.menu && !e.target.closest('.menu') && !(t&&t.dataset.act==='menu')){S.menu=false;render();if(!t)return}
+  if(!t)return;
+  const a=t.dataset.act,v=t.dataset.v;
+  if(t.tagName==='FORM')return;
+  if(a==='closesheet'){if(e.target===t||t.tagName==='BUTTON'){S.sheet=null;render()}return}
+  if(a==='opensearch'){openSearch();return}
+  if(a==='closesearch'){if(e.target===t||t.tagName==='BUTTON'){S.search=false;render()}return}
+  if(a==='sscope'){S.sscope=v;document.getElementById('sres').innerHTML=searchResults();document.querySelectorAll('.scope .chip').forEach(b=>b.classList.toggle('on',b.dataset.v===v));document.getElementById('gq').focus();return}
+  if(a==='sfill'){S.sq=v;const g=document.getElementById('gq');g.value=v;g.focus();document.getElementById('sres').innerHTML=searchResults();return}
+  if(a==='goto'){S.search=false;if(S.ws==='admin'){S.ws='club:1'}S.page=v;S.f={q:S.sq.replace(/^#/,'')};render();return}
+  if(a==='fstage'){S.f.stage=v;document.querySelectorAll('.fchips .chip').forEach(b=>b.classList.toggle('on',b.dataset.v===v));fillList();return}
+  if(a==='fclear'){if(v==='*'){S.f={q:''}}else{S.f[v]='';if(v==='stage')S.f.stage=''}render();return}
+  if(a==='device'){const ph=v==='phone';document.getElementById('frame').classList.toggle('phone',ph);document.getElementById('dPh').classList.toggle('on',ph);document.getElementById('dLap').classList.toggle('on',!ph);return}
+  if(a==='notes'){const on=v==='1';document.body.classList.toggle('hide-notes',!on);document.getElementById('nOn').classList.toggle('on',on);document.getElementById('nOff').classList.toggle('on',!on);return}
+  if(a==='jump'){S.menu=false;S.sheet=null;if(v==='login'){S.screen='login'}else{S.screen='app';if(v==='admin'){S.ws='admin';S.page='overview'}if(v==='club'){S.ws='club:1';S.page='home'}if(v==='newclub'){S.ws='club:7';S.page='home'}}setDesk(null);S.deskNum='';render();return}
+  if(a==='portal'){S.portal=v;render();return}
+  if(a==='menu'){S.menu=!S.menu;render();return}
+  if(a==='ws'){S.ws=v;S.menu=false;S.page=v==='admin'?'overview':'home';setDesk(null);S.deskNum='';render();return}
+  if(a==='page'){S.page=v;S.f={q:''};setDesk(null);S.deskNum='';render();return}
+  if(a==='logout'){S.screen='login';render();return}
+  if(a==='range'){S.range=v;render();return}
+  if(a==='try'){setDesk(v);if(S.page!=='home'&&S.page!=='desk')S.page='home';render();const p=document.querySelector('.panel');p&&p.scrollIntoView({block:'nearest',behavior:'smooth'});return}
+  if(a==='reset'){setDesk(null);S.deskNum='';render();document.getElementById('dn')?.focus();return}
+  if(a==='cust'){S.issue.cust=v;S.issue.newCust=false;render();return}
+  if(a==='newcust'){S.issue.newCust=true;render();return}
+  if(a==='purpose'){S.issue.purpose=v;render();return}
+  if(a==='doissue'){if(S.issue.newCust){S.issue.cust=(document.getElementById('nn')||{}).value||'New customer'}S.issued=true;render();return}
+  if(a==='vtry'){S.visit.mob=v;S.visit.err='';const n=document.getElementById('vn');S.visit.name=n?n.value:'';render();return}
+  if(a==='d2'){S.d2=true;render();return}
+  if(a==='trial'){S.trial=true;render();return}
+  if(a==='sheet'){S.sheet=v;render();return}
+  if(a==='bval'){S.batchValid=+v;render();return}
+});
+document.addEventListener('submit',e=>{
+  const f=e.target,a=f.dataset.act;e.preventDefault();
+  if(a==='login'){S.screen='app';S.menu=false;if(S.portal==='club'){S.ws='club:1';S.page='home'}else{S.ws='admin';S.page='overview'}render();return}
+  if(a==='desk'){const n=(document.getElementById('dn').value||'').replace(/\D/g,'');if(!n)return;setDesk(n);render();return}
+  if(a==='visitmob'){
+    const mob=document.getElementById('vm').value.replace(/\D/g,''),name=document.getElementById('vn').value.trim();
+    S.visit.mob=document.getElementById('vm').value;S.visit.name=name;
+    if(mob.length!==10||!/^[6-9]/.test(mob)) S.visit.err='Enter a 10-digit mobile number starting with 6, 7, 8 or 9.';
+    else if(mob==='9963044118') S.visit.err='<b>Anitha P has already visited as a friend</b> (coupon PB-0001 #3 at Shreyas · Kadapa, 05 Nov). A person can be a referral visitor only once.';
+    else if(mob==='9848011223') S.visit.err='<b>This is the coupon holder\'s own number.</b> Lakshmi Devi can\'t use her own coupon. Give it to a friend.';
+    else if(!name) S.visit.err='Enter the friend\'s name.';
+    else {S.visit.ok=true;S.visit.err=''}
+    render();return;
+  }
+});
+render();
+})();
+</script>
