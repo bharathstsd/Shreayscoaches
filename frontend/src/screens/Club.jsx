@@ -87,11 +87,11 @@ export function Trials({ ctx }) {
   );
 }
 
-export function Cvc({ ctx }) {
+export function Cvc({ ctx, arg }) {
   const custs = useLoad("customers?limit=500", { club: ctx.club });
   const members = useLoad("cvc", { club: ctx.club });
-  const [sel, setSel] = useState(null);
-  const [date, setDate] = useState(null);
+  const [sel, setSel] = useState(arg ? Number(arg) : null);
+  const [date, setDate] = useState(today());
   const [run, busy] = useAction();
   if (!custs.data || !members.data) return <Loading />;
   const candidates = custs.data.filter((c) => c.stage === "Trial done" || c.stage === "In trial");
@@ -99,7 +99,7 @@ export function Cvc({ ctx }) {
   async function convert() {
     const c = candidates.find((x) => x.id === sel);
     const r = await run(() => api("cvc", { method: "POST", club: ctx.club, body: { club: ctx.club, customer: sel, start_date: date } }), `${c.name} is now a CVC member and can get a CVC coupon.`);
-    if (r) { setSel(null); setDate(null); custs.reload(); members.reload(); }
+    if (r) { setSel(null); setDate(today()); custs.reload(); members.reload(); }
   }
   return (
     <>

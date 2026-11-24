@@ -112,13 +112,13 @@ function Shell() {
 
   const nav = inClub
     ? [["home", "Home", "home"], ["desk", "Coupon desk", "desk"], ["customers", "Customers", "users"], ["referrals", "Referrals", "ref"],
-       ["trials", "Trials & CVC", "trial"], ["coaches", "Coaches", "coach"]]
+       ["trials", "3-day trials", "trial"], ["coaches", "Coaches", "coach"]]
     : [["overview", "Overview", "home"], ["clubs", "Clubs", "clubs"], ["coupons", "Coupons", "coupon"], ["resets", "Resets", "key"],
        ["import", "Import", "upload"], ["audit", "Activity", "log"]];
-  const sideMore = inClub ? [["weekly", "Weekly results", "award"], ...(role !== "SUPERVISOR" ? [["tree", "Referral trees", "tree"]] : [])] : [];
+  const sideMore = inClub ? [["cvc", "CVC membership", "star"], ["weekly", "Weekly results", "award"], ...(role !== "SUPERVISOR" ? [["tree", "Referral trees", "tree"]] : [])] : [];
   const tabs = inClub ? [...nav.filter((n) => !["trials", "coaches"].includes(n[0])), ["more", "More", "grid"]]
     : [...nav.filter((n) => ["overview", "clubs", "coupons", "resets"].includes(n[0])), ["more", "More", "grid"]];
-  const rootOf = { club: "clubs", allocate: "coupons", customer: "customers", cvc: "trials", weekly: inClub ? "weekly" : "", password: "" };
+  const rootOf = { club: "clubs", allocate: "coupons", customer: "customers", weekly: inClub ? "weekly" : "", password: "" };
   const active = rootOf[name] !== undefined ? rootOf[name] : name;
   const inTabs = tabs.some((n) => n[0] === active);
   const isOn = (k, list) => active === k || (list === tabs && k === "more" && !inTabs && active !== "");
