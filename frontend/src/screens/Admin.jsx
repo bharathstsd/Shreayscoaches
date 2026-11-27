@@ -594,6 +594,7 @@ export function ImportExcel({ ctx }) {
           <p className="muted">Existing clubs are reused. Coaches already in a club (same mobile) are skipped.</p>
         </div>
       </div>
+      {check && check.summary && check.summary.clubs_skipped > 0 && !check.ok && <p className="muted">Already set up in the app (skipped): {check.summary.skipped_rows.map((r) => r.club).join(", ")}.</p>}
       {check && !check.ok && (
         <div className="card">
           <div className="banner bad"><b>{check.errors.length} problem{check.errors.length > 1 ? "s" : ""} to fix.</b>&nbsp;Nothing was created. Fix these rows in Excel and upload again.</div>
@@ -603,6 +604,7 @@ export function ImportExcel({ ctx }) {
       {check && check.ok && (
         <div className="card">
           <div className="banner ok"><b>Everything looks good.</b>&nbsp;{s.new_clubs} new club(s), {s.owners} Club Owner login(s), {s.coaches} coach(es){s.coaches_skipped ? `, ${s.coaches_skipped} already in the app` : ""}.</div>
+          {s.clubs_skipped > 0 && <p className="muted" style={{ margin: 0 }}>Already set up in the app, so left as they are: {s.skipped_rows.map((r) => r.club).join(", ")}.</p>}
           {s.rows.length > 0 && (
             <div className="tbl-wrap"><table><thead><tr><th>Club</th><th>Club Owner</th><th>Mobile</th><th>Herbalife ID</th><th>Upline</th></tr></thead><tbody>
               {s.rows.map((r, i) => <tr key={i}><td>{r.club} {!r.new_club && <span className="tag grey">existing</span>}</td><td>{r.owner}</td><td>{r.mobile}</td><td>{r.herbalife_id}</td><td>{r.upline}</td></tr>)}
@@ -613,7 +615,7 @@ export function ImportExcel({ ctx }) {
               {s.coach_rows.map((r, i) => <tr key={i}><td>{r.club}</td><td>{r.coach} {r.skip && <span className="tag grey">already added</span>}</td><td>{r.mobile}</td><td>{r.upline}</td></tr>)}
             </tbody></table></div>
           )}
-          <button className="btn" disabled={busy} onClick={() => send(true)}>Create {s.new_clubs ? `${s.new_clubs} club(s), ` : ""}{s.owners} login(s) and {s.coaches} coach(es)</button>
+          <button className="btn" disabled={busy || (!s.owners && !s.coaches)} onClick={() => send(true)}>{!s.owners && !s.coaches ? "Nothing new to create" : `Create ${s.new_clubs ? s.new_clubs + " club(s), " : ""}${s.owners} login(s) and ${s.coaches} coach(es)`}</button>
         </div>
       )}
     </>

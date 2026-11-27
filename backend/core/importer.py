@@ -76,8 +76,10 @@ def _sheet(wb, name, cols):
     out = []
     for n, r in enumerate(rows[1:], start=2):
         rec = {c: _cell(r[idx[c]]) if idx[c] < len(r) else "" for c in cols}
-        if not any(rec.values()) or rec["club name"].lower().startswith("example"):
+        if rec["club name"].lower().startswith("example"):
             continue
+        if not any(v for k, v in rec.items() if k != "club name"):
+            continue          # only the club name filled in (e.g. a pre-listed coaches sheet) = an empty row
         rec["_row"] = n
         out.append(rec)
     return out
@@ -104,7 +106,7 @@ def check(wb):
     coaches = _sheet(wb, "Coaches", COACH_COLS)
     if _find_sheet(wb, "Clubs") is None and _find_sheet(wb, "Coaches") is None:
         raise ImportError_('The file needs a sheet named "Clubs" and/or "Coaches". Download the template.')
-    errors, club_plan = [], []
+    errors, club_plan, skipped = [], [], []
     seen_user, seen_mobile, names = set(), set(), set()
     for r in clubs:
         where = f'Clubs row {r["_row"]}'
@@ -116,6 +118,10 @@ def check(wb):
         if name.lower() in names:
             errors.append(f'{where}: "{name}" appears twice.')
         names.add(name.lower())
+        existing = Club.objects.filter(name__iexact=name).first()
+        if existing and (existing.admin_owner_id or User.objects.filter(club=existing, role="OWNER", is_active=True).exists()):
+            skipped.append({"club": existing.name, "owner": r["owner name"]})   # already set up in the app: leave it as it is
+            continue
         om, um = _mobile(r["owner mobile"]), _mobile(r["upline mobile"])
         _person(errors, where, "Owner", om, r["owner herbalife id"])
         _person(errors, where, "Upline", um, r["upline herbalife id"])
@@ -124,9 +130,6 @@ def check(wb):
             errors.append(f'{where}: Herbalife ID {r["owner herbalife id"]} already has a login.')
         if om in seen_mobile or User.objects.filter(mobile=om).exists():
             errors.append(f"{where}: mobile {om} is already used by another login.")
-        existing = Club.objects.filter(name__iexact=name).first()
-        if existing and User.objects.filter(club=existing, role="OWNER", is_active=True).exists():
-            errors.append(f"{where}: {name} already has an active Club Owner.")
         if existing and not existing.is_active:
             errors.append(f"{where}: {name} is disabled. Enable it first.")
         seen_user.add(uname)
@@ -154,9 +157,9 @@ def check(wb):
         seen_coach.add(key)
         coach_plan.append({**r, "mobile": cm, "skip": bool(dup),
                            "upline": {"upline_name": r["upline name"], "upline_mobile": um, "upline_herbalife_id": r["upline herbalife id"]}})
-    if not clubs and not coaches:
+    if not club_plan and not coaches and not skipped:
         errors.append("The sheets are empty. Fill in at least one club or coach (example rows are ignored).")
-    summary = {"clubs": len(club_plan), "new_clubs": sum(1 for p in club_plan if not p["existing_id"]), "owners": len(club_plan),
+    summary = {"clubs_skipped": len(skipped), "skipped_rows": skipped, "clubs": len(club_plan), "new_clubs": sum(1 for p in club_plan if not p["existing_id"]), "owners": len(club_plan),
                "coaches": sum(1 for c in coach_plan if not c["skip"]), "coaches_skipped": sum(1 for c in coach_plan if c["skip"]),
                "rows": [{"club": p["row"]["club name"], "owner": p["row"]["owner name"], "mobile": p["mobile"], "herbalife_id": p["row"]["owner herbalife id"],
                          "upline": p["row"]["upline name"], "new_club": not p["existing_id"]} for p in club_plan],

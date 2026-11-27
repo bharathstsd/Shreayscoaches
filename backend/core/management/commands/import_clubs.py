@@ -33,7 +33,8 @@ class Command(BaseCommand):
         except importer.ImportError_ as e:
             raise CommandError(str(e))
         self.stdout.write(f"Found {s['clubs']} club(s) ({s['new_clubs']} new), {s['owners']} Club Owner login(s), "
-                          f"{s['coaches']} new coach(es)" + (f", {s['coaches_skipped']} coach(es) already in the app" if s["coaches_skipped"] else "") + ".")
+                          f"{s['coaches']} new coach(es)" + (f", {s['coaches_skipped']} coach(es) already in the app" if s["coaches_skipped"] else "")
+                          + (f", {s['clubs_skipped']} club(s) already set up (skipped)" if s["clubs_skipped"] else "") + ".")
         if errors:
             self.stdout.write(self.style.ERROR(f"\n{len(errors)} problem(s) to fix in the Excel file:"))
             for e in errors:
