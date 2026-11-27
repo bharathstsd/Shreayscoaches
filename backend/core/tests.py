@@ -486,8 +486,8 @@ class AccountTests(Base):
         r = up("1")
         self.assertTrue(r.data["created"]); self.assertEqual(r.data["logins"][0]["username"], "w3051646")
         self.assertEqual(Coach.objects.filter(club=self.a, name="Ravi").count(), 1)
-        r = up("0")                                    # same file again: owner already exists
-        self.assertFalse(r.data["ok"]); self.assertTrue(any("already" in e for e in r.data["errors"]))
+        r = up("0")                                    # same file again: the club is already set up, so it is skipped
+        self.assertTrue(r.data["ok"]); self.assertEqual(r.data["summary"]["clubs_skipped"], 1); self.assertEqual(r.data["summary"]["owners"], 0)
         self.assertEqual(self.as_(self.owner).post("/api/import", {}, format="multipart").status_code, 403)
 
     def test_password_reset_flow(self):
